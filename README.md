@@ -25,14 +25,13 @@ Makefile              GHDL analysis, simulation and Yosys synthesis
 
 `make check` analyses and elaborates the design with GHDL (`TOP=spi_shift`, `spi_master`, `spi_slave` or `spi_port`, default `spi_port`). `make synth` runs a generic Yosys synthesis of `TOP` with the GHDL plugin and prints the cell count.
 
-`make sim` runs the testbench, which wires two `spi_port` instances to one modelled bus (pull resistors, no tri-state inside the design), runs random `WIDTH`-bit frames with one as master and the other as slave, then swaps the roles, and finally straps both as slaves and drives the pins from a software host with frames of any length (empty, shorter than, equal to and longer than `WIDTH`). It checks the word and bit count the slave reports once per frame, the word the master receives, the reply bits the host samples, frame boundaries and length, SCK and `CS#` timing, back-to-back frames, pad contention and that the unused role in each port stays silent. It stops at the first error and prints `PASS` with coverage counts at the end. `make test` runs it with `WIDTH` = 16, 32 and 64. Generics go in `GENERICS`, e.g. `make sim GENERICS="-gSCK_DIV=7 -gCS_HIGH_CYCLES=4 -gSEED=3 -gNUM_FRAMES=200"` (`SCK_DIV` at least 5, because the slave needs SCK ≤ clk/10). `make wave` does the same and writes `build/tb_spi_port.ghw`.
+`make sim` runs the testbench, which wires two `spi_port` instances to one modelled bus (pull resistors, no tri-state inside the design), runs random `WIDTH`-bit frames with one as master and the other as slave, then swaps the roles, and finally straps both as slaves and drives the pins from a software host with frames of any length (empty, shorter than, equal to and longer than `WIDTH`). It checks the word and bit count the slave reports once per frame, the word the master receives, the reply bits the host samples, frame boundaries and length, SCK and `CS#` timing, back-to-back frames, pad contention and that the unused role in each port stays silent. It stops at the first error and prints `PASS` with coverage counts at the end. `make test` runs it with `WIDTH` = 16, 32 and 64. Generics go in `GENERICS`, e.g. `make sim GENERICS="-gSCK_DIV=7 -gSEED=3 -gNUM_FRAMES=200"` (`SCK_DIV` at least 5, because the slave needs SCK ≤ clk/10). `make wave` does the same and writes `build/tb_spi_port.ghw`.
 
 ## spi_port
 
 | Generic | Default | Meaning |
 |---------|---------|---------|
 | `SCK_DIV` | 1 | Master SCK half-period in system cycles; SCK = clk / (2·`SCK_DIV`) |
-| `CS_HIGH_CYCLES` | 2 | Master minimum `CS#` high time between two frames, in system cycles (at least 2) |
 | `WIDTH` | 64 | Word size and master frame length, in bits (at least 2) |
 | `CNT_BITS` | 7 | Width of the bit count; 2^`CNT_BITS` must exceed `WIDTH` |
 
@@ -51,7 +50,7 @@ Every asynchronous input goes through a two-flip-flop synchroniser (`bit_sync`),
 
 SCK idles low, `CS#` falls together with the first MOSI bit, MOSI changes on SCK falling edges, and MISO is sampled in the system cycle in which SCK rises. SCK, MOSI and `CS#` all come straight from flip-flops.
 
-- **Start:** a frame starts when `m_start_i` and `m_ready_o` are both high; `m_tx_data_i` is loaded in that cycle and goes out MSB first. `m_ready_o` is high while the master is idle and the `CS#` hold is over.
+- **Start:** a frame starts when `m_start_i` and `m_ready_o` are both high; `m_tx_data_i` is loaded in that cycle and goes out MSB first. `m_ready_o` is high while the master is idle. Between two frames `CS#` stays high for at least 2 cycles (the cycle after the frame and the cycle in which the next `start` is taken); a client that needs a longer gap, such as a flash's tSHSL, waits before raising `m_start_i`.
 - **Frame:** always `WIDTH` bits, with no gaps: `2·WIDTH·SCK_DIV` cycles with `CS#` low. `CS#` rises on the falling edge that ends the last bit.
 - **Receive:** `m_rx_valid_o` pulses in the first cycle with `CS#` high, with the `WIDTH` bits received on `m_rx_data_o` (the first bit in the MSB).
 
@@ -79,7 +78,7 @@ A transmit and a receive shift register (`WIDTH` bits each) and a bit counter, m
 
 ## spi_master and spi_slave
 
-Both only produce the four strobes. `spi_master` generates SCK and `CS#` from `SCK_DIV` and `CS_HIGH_CYCLES`, times the strobes to its own clock (so no edge detection is involved) and ends the frame when the core's count reaches `WIDTH`; its `stop` comes one cycle after `CS#` rises. `spi_slave` detects the edges of the synchronised SCK and `CS#`.
+Both only produce the four strobes. `spi_master` generates SCK and `CS#` from `SCK_DIV`, times the strobes to its own clock (so no edge detection is involved) and ends the frame when the core's count reaches `WIDTH`; its `stop` comes one cycle after `CS#` rises. `spi_slave` detects the edges of the synchronised SCK and `CS#`.
 
 ## License
 

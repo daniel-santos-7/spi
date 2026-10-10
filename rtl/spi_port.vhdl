@@ -10,10 +10,9 @@ use IEEE.std_logic_1164.all;
 
 entity spi_port is
     generic (
-        SCK_DIV        : positive := 1;
-        CS_HIGH_CYCLES : positive := 2;
-        WIDTH          : positive := 64;
-        CNT_BITS       : positive := 7
+        SCK_DIV  : positive := 1;
+        WIDTH    : positive := 64;
+        CNT_BITS : positive := 7
     );
     port (
         clk_i        : in  std_logic;
@@ -92,10 +91,9 @@ begin
     s_cs_n  <= cs_n_i or not dbg;
 
     spi_port_master: entity work.spi_master generic map (
-        SCK_DIV        => SCK_DIV,
-        CS_HIGH_CYCLES => CS_HIGH_CYCLES,
-        WIDTH          => WIDTH,
-        CNT_BITS       => CNT_BITS
+        SCK_DIV  => SCK_DIV,
+        WIDTH    => WIDTH,
+        CNT_BITS => CNT_BITS
     ) port map (
         clk_i   => clk_i,
         rst_i   => rst_i,

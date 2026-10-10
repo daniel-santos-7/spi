@@ -35,19 +35,19 @@ use IEEE.math_real.all;
 
 entity tb_spi_port is
     generic (
-        SCK_DIV        : positive := 5;
-        CS_HIGH_CYCLES : positive := 2;
-        NUM_FRAMES     : positive := 60;
-        HOST_FRAMES    : positive := 30;
-        SEED           : positive := 1;
-        WIDTH          : positive := 32;
-        CNT_BITS       : positive := 7
+        SCK_DIV     : positive := 5;
+        NUM_FRAMES  : positive := 60;
+        HOST_FRAMES : positive := 30;
+        SEED        : positive := 1;
+        WIDTH       : positive := 32;
+        CNT_BITS    : positive := 7
     );
 end entity tb_spi_port;
 
 architecture sim of tb_spi_port is
 
     constant CLK_PERIOD : time    := 10 ns;
+    constant CS_MIN     : integer := 2;
     constant FRAME_CYC  : integer := 2 * WIDTH * SCK_DIV;
     constant HOST_MAX   : integer := WIDTH + 8;
     constant MAX_FRAMES : integer := 2 * NUM_FRAMES + 1;
@@ -172,10 +172,9 @@ begin
     ------------------------------------------------------------------
 
     tb_spi_port_a: entity work.spi_port generic map (
-        SCK_DIV        => SCK_DIV,
-        CS_HIGH_CYCLES => CS_HIGH_CYCLES,
-        WIDTH          => WIDTH,
-        CNT_BITS       => CNT_BITS
+        SCK_DIV  => SCK_DIV,
+        WIDTH    => WIDTH,
+        CNT_BITS => CNT_BITS
     ) port map (
         clk_i        => clk,
         rst_i        => rst,
@@ -205,10 +204,9 @@ begin
     );
 
     tb_spi_port_b: entity work.spi_port generic map (
-        SCK_DIV        => SCK_DIV,
-        CS_HIGH_CYCLES => CS_HIGH_CYCLES,
-        WIDTH          => WIDTH,
-        CNT_BITS       => CNT_BITS
+        SCK_DIV  => SCK_DIV,
+        WIDTH    => WIDTH,
+        CNT_BITS => CNT_BITS
     ) port map (
         clk_i        => clk,
         rst_i        => rst,
@@ -558,7 +556,7 @@ begin
         variable miso_p : std_logic;
         variable phase  : natural := 0;
         variable lo_cnt : natural := 0;
-        variable hi_cnt : natural := CS_HIGH_CYCLES;
+        variable hi_cnt : natural := CS_MIN;
         variable frame  : natural := 0;
     begin
         wait until rising_edge(clk) and chk_on = '1';
@@ -584,11 +582,11 @@ begin
                 if cs_p = '1' and cs_n_in = '0' then
                     assert sclk_in = '0'
                         report "bus: SCK high when CS# falls" severity error;
-                    assert hi_cnt >= CS_HIGH_CYCLES
+                    assert hi_cnt >= CS_MIN
                         report "bus: CS# high for " & integer'image(hi_cnt) & " cycles before frame " &
                                integer'image(frame) severity error;
                     if plan_b2b(frame) = '1' then
-                        assert hi_cnt = CS_HIGH_CYCLES
+                        assert hi_cnt = CS_MIN
                             report "bus: back-to-back frame " & integer'image(frame) & " waited " &
                                    integer'image(hi_cnt) & " cycles with CS# high" severity error;
                     end if;

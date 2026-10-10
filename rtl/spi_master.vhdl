@@ -11,10 +11,9 @@ use IEEE.numeric_std.all;
 
 entity spi_master is
     generic (
-        SCK_DIV        : positive := 1;
-        CS_HIGH_CYCLES : positive := 2;
-        WIDTH          : positive := 64;
-        CNT_BITS       : positive := 7
+        SCK_DIV  : positive := 1;
+        WIDTH    : positive := 64;
+        CNT_BITS : positive := 7
     );
     port (
         clk_i   : in  std_logic;
@@ -33,26 +32,22 @@ end entity spi_master;
 
 architecture rtl of spi_master is
 
-    type state_t is (IDLE, SCK_LO, SCK_HI, STOP, HOLD);
+    type state_t is (IDLE, SCK_LO, SCK_HI, STOP);
 
     signal state    : state_t;
-    signal cnt      : natural range 0 to SCK_DIV + CS_HIGH_CYCLES;
+    signal cnt      : natural range 0 to SCK_DIV;
     signal sclk     : std_logic;
     signal cs_n     : std_logic;
     signal stop_reg : std_logic;
 
     signal ready    : std_logic;
-    signal cnt_max  : natural range 0 to SCK_DIV + CS_HIGH_CYCLES;
     signal cnt_end  : std_logic;
     signal bits_end : std_logic;
     signal cnt_en   : std_logic;
 
 begin
 
-    assert CS_HIGH_CYCLES >= 2 report "SPI master: CS_HIGH_CYCLES must be at least 2." severity failure;
-
-    cnt_max <= CS_HIGH_CYCLES-2 when state = STOP or state = HOLD else SCK_DIV-1;
-    cnt_end <= '1' when cnt = cnt_max else '0';
+    cnt_end <= '1' when cnt = SCK_DIV-1 else '0';
 
     bits_end <= '1' when unsigned(bits_i) = WIDTH else '0';
 
@@ -86,27 +81,16 @@ begin
                             if bits_end = '1' then
                                 state    <= STOP;
                                 cs_n     <= '1';
+                                cnt_en   <= '0';
                                 stop_reg <= '1';
                             else
                                 state <= SCK_LO;
                             end if;
                         end if;
                     when STOP =>
-                        if cnt_end = '1' then
-                            state    <= IDLE;
-                            cnt_en   <= '0';
-                            ready    <= '1';
-                            stop_reg <= '0';
-                        else
-                            state    <= HOLD;
-                            stop_reg <= '0';
-                        end if;
-                    when HOLD =>
-                        if cnt_end = '1' then
-                            state  <= IDLE;
-                            cnt_en <= '0';
-                            ready  <= '1';
-                        end if;
+                        state    <= IDLE;
+                        ready    <= '1';
+                        stop_reg <= '0';
                 end case;
             end if;
         end if;
