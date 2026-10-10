@@ -16,14 +16,13 @@ Dual-role SPI in VHDL-93: one set of pins and one shift core, used either as a m
 rtl/bit_sync.vhdl     single-bit synchroniser (flip-flop chain)
 rtl/spi_sync.vhdl     spi_port input synchronisers
 rtl/spi_shift.vhdl    shift core (one instance in spi_port)
-rtl/spi_master.vhdl   master timing: SCK, CS# and strobes
-rtl/spi_slave.vhdl    slave timing: strobes from the SCK and CS# edges
+rtl/spi_ctrl.vhdl     strobes for either role: master SCK/CS# FSM or slave edge detection
 rtl/spi_port.vhdl     pins, role select and the shared shift core
 tbs/tb_spi_port.vhdl  self-checking testbench: two ports on one bus
 Makefile              GHDL analysis, simulation and Yosys synthesis
 ```
 
-`make check` analyses and elaborates the design with GHDL (`TOP=spi_shift`, `spi_master`, `spi_slave` or `spi_port`, default `spi_port`). `make synth` runs a generic Yosys synthesis of `TOP` with the GHDL plugin and prints the cell count.
+`make check` analyses and elaborates the design with GHDL (`TOP=spi_shift`, `spi_ctrl` or `spi_port`, default `spi_port`). `make synth` runs a generic Yosys synthesis of `TOP` with the GHDL plugin and prints the cell count.
 
 `make sim` runs the testbench, which wires two `spi_port` instances to one modelled bus (pull resistors, no tri-state inside the design), runs random `WIDTH`-bit frames with one as master and the other as slave, then swaps the roles, and finally straps both as slaves and drives the pins from a software host with frames of any length (empty, shorter than, equal to and longer than `WIDTH`). It checks the word and bit count the slave reports once per frame, the word the master receives, the reply bits the host samples, frame boundaries and length, SCK and `CS#` timing, back-to-back frames, pad contention and that the unused role in each port stays silent. It stops at the first error and prints `PASS` with coverage counts at the end. `make test` runs it with `WIDTH` = 16, 32 and 64. Generics go in `GENERICS`, e.g. `make sim GENERICS="-gSCK_DIV=7 -gSEED=3 -gNUM_FRAMES=200"` (`SCK_DIV` at least 5, because the slave needs SCK ≤ clk/10). `make wave` does the same and writes `build/tb_spi_port.ghw`.
 
@@ -76,9 +75,9 @@ A transmit and a receive shift register (`WIDTH` bits each) and a bit counter, m
 - `fall_i` (SCK falls): shifts the transmit register, so `dout_o` (its MSB) shows the next bit, with zeros shifted in.
 - `stop_i` (`CS#` rises): comes out as `rx_valid_o`, with the word right-aligned on `rx_data_o` and the count on `rx_bits_o`.
 
-## spi_master and spi_slave
+## spi_ctrl
 
-Both only produce the four strobes. `spi_master` generates SCK and `CS#` from `SCK_DIV`, times the strobes to its own clock (so no edge detection is involved) and ends the frame when the core's count reaches `WIDTH`; its `stop` comes one cycle after `CS#` rises. `spi_slave` detects the edges of the synchronised SCK and `CS#`.
+Produces the four strobes for the role `dbg_i` selects. As master, an FSM (`IDLE`, `SCK_LO`, `SCK_HI`, `STOP`) generates SCK and `CS#` from `SCK_DIV`, times the strobes to its own clock (so no edge detection is involved) and ends the frame when the core's count reaches `WIDTH`; its `stop` comes in the `STOP` cycle, the first one with `CS#` high, and `start_i` is ignored while `dbg_i` is 1. As slave, two registers detect the edges of the synchronised SCK and `CS#`.
 
 ## License
 

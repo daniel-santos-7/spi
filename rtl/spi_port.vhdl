@@ -46,20 +46,10 @@ end entity spi_port;
 architecture rtl of spi_port is
 
     signal dbg      : std_logic;
-    signal m_start  : std_logic;
     signal s_cs_n   : std_logic;
     signal s_sclk   : std_logic;
     signal s_cs_n_s : std_logic;
     signal s_mosi   : std_logic;
-
-    signal m_sh_start : std_logic;
-    signal m_sh_stop  : std_logic;
-    signal m_sh_rise  : std_logic;
-    signal m_sh_fall  : std_logic;
-    signal s_sh_start : std_logic;
-    signal s_sh_stop  : std_logic;
-    signal s_sh_rise  : std_logic;
-    signal s_sh_fall  : std_logic;
 
     signal sh_start : std_logic;
     signal sh_stop  : std_logic;
@@ -87,44 +77,31 @@ begin
         mosi_o => s_mosi
     );
 
-    m_start <= m_start_i and not dbg;
-    s_cs_n  <= cs_n_i or not dbg;
+    s_cs_n <= cs_n_i or not dbg;
 
-    spi_port_master: entity work.spi_master generic map (
+    spi_port_ctrl: entity work.spi_ctrl generic map (
         SCK_DIV  => SCK_DIV,
         WIDTH    => WIDTH,
         CNT_BITS => CNT_BITS
     ) port map (
         clk_i   => clk_i,
         rst_i   => rst_i,
-        sclk_o  => sclk_o,
-        cs_n_o  => cs_n_o,
-        start_i => m_start,
-        ready_o => m_ready_o,
-        bits_i  => sh_bits,
-        start_o => m_sh_start,
-        stop_o  => m_sh_stop,
-        rise_o  => m_sh_rise,
-        fall_o  => m_sh_fall
-    );
-
-    spi_port_slave: entity work.spi_slave port map (
-        clk_i   => clk_i,
-        rst_i   => rst_i,
+        dbg_i   => dbg,
         sclk_i  => s_sclk,
         cs_n_i  => s_cs_n_s,
-        start_o => s_sh_start,
-        stop_o  => s_sh_stop,
-        rise_o  => s_sh_rise,
-        fall_o  => s_sh_fall
+        sclk_o  => sclk_o,
+        cs_n_o  => cs_n_o,
+        start_i => m_start_i,
+        ready_o => m_ready_o,
+        bits_i  => sh_bits,
+        start_o => sh_start,
+        stop_o  => sh_stop,
+        rise_o  => sh_rise,
+        fall_o  => sh_fall
     );
 
-    sh_start <= s_sh_start  when dbg = '1' else m_sh_start;
-    sh_stop  <= s_sh_stop   when dbg = '1' else m_sh_stop;
-    sh_rise  <= s_sh_rise   when dbg = '1' else m_sh_rise;
-    sh_fall  <= s_sh_fall   when dbg = '1' else m_sh_fall;
-    sh_din   <= s_mosi      when dbg = '1' else miso_i;
-    sh_tx    <= s_tx_data_i when dbg = '1' else m_tx_data_i;
+    sh_din <= s_mosi      when dbg = '1' else miso_i;
+    sh_tx  <= s_tx_data_i when dbg = '1' else m_tx_data_i;
 
     spi_port_shift: entity work.spi_shift generic map (
         WIDTH    => WIDTH,

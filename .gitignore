@@ -1,8 +1,7 @@
 build/
 bit_sync
 spi_sync
-spi_master
-spi_slave
+spi_ctrl
 spi_port
 *.o
 spi_shift

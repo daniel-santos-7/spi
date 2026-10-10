@@ -1,7 +1,7 @@
 ----------------------------------------------------------------------
 -- Leaf project
 -- developed by: Daniel Santos
--- module: SPI master timing (SCK, CS# and shift strobes)
+-- module: SPI control (shift strobes for the master or the slave role)
 -- 2026
 ----------------------------------------------------------------------
 
@@ -9,7 +9,7 @@ library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
 
-entity spi_master is
+entity spi_ctrl is
     generic (
         SCK_DIV  : positive := 1;
         WIDTH    : positive := 64;
@@ -18,6 +18,9 @@ entity spi_master is
     port (
         clk_i   : in  std_logic;
         rst_i   : in  std_logic;
+        dbg_i   : in  std_logic;
+        sclk_i  : in  std_logic;  -- sclk_i and cs_n_i must already be
+        cs_n_i  : in  std_logic;  -- synchronised to clk_i (spi_port does it)
         sclk_o  : out std_logic;
         cs_n_o  : out std_logic;
         start_i : in  std_logic;
@@ -28,9 +31,9 @@ entity spi_master is
         rise_o  : out std_logic;
         fall_o  : out std_logic
     );
-end entity spi_master;
+end entity spi_ctrl;
 
-architecture rtl of spi_master is
+architecture rtl of spi_ctrl is
 
     type state_t is (IDLE, SCK_LO, SCK_HI, STOP);
 
@@ -39,17 +42,27 @@ architecture rtl of spi_master is
     signal sclk     : std_logic;
     signal cs_n     : std_logic;
     signal stop_reg : std_logic;
-
     signal ready    : std_logic;
+    signal cnt_en   : std_logic;
     signal cnt_end  : std_logic;
     signal bits_end : std_logic;
-    signal cnt_en   : std_logic;
+
+    signal sclk_reg : std_logic;
+    signal cs_n_reg : std_logic;
+
+    signal m_start  : std_logic;
+    signal m_rise   : std_logic;
+    signal m_fall   : std_logic;
+    signal s_start  : std_logic;
+    signal s_stop   : std_logic;
+    signal s_rise   : std_logic;
+    signal s_fall   : std_logic;
 
 begin
 
-    cnt_end <= '1' when cnt = SCK_DIV-1 else '0';
-
+    cnt_end  <= '1' when cnt = SCK_DIV-1 else '0';
     bits_end <= '1' when unsigned(bits_i) = WIDTH else '0';
+    m_start  <= start_i and ready and not dbg_i;
 
     fsm_proc: process(clk_i)
     begin
@@ -64,7 +77,7 @@ begin
             else
                 case state is
                     when IDLE =>
-                        if start_i = '1' then
+                        if m_start = '1' then
                             state  <= SCK_LO;
                             cs_n   <= '0';
                             cnt_en <= '1';
@@ -111,12 +124,33 @@ begin
         end if;
     end process cnt_proc;
 
+    m_rise <= '1' when state = SCK_LO and cnt_end = '1' else '0';
+    m_fall <= '1' when state = SCK_HI and cnt_end = '1' else '0';
+
+    edge_proc: process(clk_i)
+    begin
+        if rising_edge(clk_i) then
+            if rst_i = '1' then
+                sclk_reg <= '0';
+                cs_n_reg <= '1';
+            else
+                sclk_reg <= sclk_i;
+                cs_n_reg <= cs_n_i;
+            end if;
+        end if;
+    end process edge_proc;
+
+    s_start <= cs_n_reg and not cs_n_i;
+    s_stop  <= cs_n_i and not cs_n_reg;
+    s_rise  <= sclk_i and not sclk_reg and not cs_n_i;
+    s_fall  <= sclk_reg and not sclk_i and not cs_n_i;
+
     sclk_o  <= sclk;
     cs_n_o  <= cs_n;
     ready_o <= ready;
-    start_o <= start_i and ready;
-    stop_o  <= stop_reg;
-    rise_o  <= '1' when state = SCK_LO and cnt_end = '1' else '0';
-    fall_o  <= '1' when state = SCK_HI and cnt_end = '1' else '0';
+    start_o <= s_start when dbg_i = '1' else m_start;
+    stop_o  <= s_stop  when dbg_i = '1' else stop_reg;
+    rise_o  <= s_rise  when dbg_i = '1' else m_rise;
+    fall_o  <= s_fall  when dbg_i = '1' else m_fall;
 
 end architecture rtl;
