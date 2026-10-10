@@ -13,8 +13,7 @@ Dual-role SPI in VHDL-93: one set of pins and one shift core, used either as a m
 ## Structure
 
 ```
-rtl/bit_sync.vhdl     single-bit synchroniser (flip-flop chain)
-rtl/spi_sync.vhdl     spi_port input synchronisers
+rtl/spi_sync.vhdl     spi_port input synchronisers (two flip-flops each)
 rtl/spi_shift.vhdl    shift core (one instance in spi_port)
 rtl/spi_ctrl.vhdl     strobes for either role: master SCK/CS# FSM or slave edge detection
 rtl/spi_port.vhdl     pins, role select and the shared shift core
@@ -43,7 +42,7 @@ The input `dbg_i` picks the role:
 
 `spi_port` holds a single `spi_shift`, and `dbg` selects what drives it: the master's strobes, `miso_i` as data in and `m_tx_data_i`, or the slave's strobes, the synchronised MOSI and `s_tx_data_i`. The core's output bit goes to both `mosi_o` and `miso_o`; only the one whose `_oe` is set reaches the pin. The received word and count come out on both interfaces, and the core's `rx_valid` is routed to `m_rx_valid_o` or `s_rx_valid_o` by the role.
 
-Every asynchronous input goes through a two-flip-flop synchroniser (`bit_sync`), all grouped in `spi_sync`: `dbg_i`, and SCK, `CS#` and MOSI on the way to the slave. The master needs none, since it only samples MISO at its own SCK edge. `dbg_o` gives the synchronised strap back to the client. It is a strap, not a run-time switch: change it only while the master is idle and no slave frame is in progress. While it is 1, the master's `start` is gated off, so no frame starts. While it is 0, the slave sees `CS#` as high, so master traffic never reaches it.
+Every asynchronous input goes through a two-flip-flop synchroniser, all in `spi_sync`: `dbg_i`, and SCK, `CS#` and MOSI on the way to the slave. The master needs none, since it only samples MISO at its own SCK edge. `dbg_o` gives the synchronised strap back to the client. It is a strap, not a run-time switch: change it only while the master is idle and no slave frame is in progress. While it is 1, the master's `start` is gated off, so no frame starts. While it is 0, the slave sees `CS#` as high, so master traffic never reaches it.
 
 ### Master interface (`m_`)
 

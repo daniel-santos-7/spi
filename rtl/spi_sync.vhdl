@@ -24,46 +24,34 @@ entity spi_sync is
 end entity spi_sync;
 
 architecture rtl of spi_sync is
+
+    signal dbg_s  : std_logic_vector(1 downto 0);
+    signal sclk_s : std_logic_vector(1 downto 0);
+    signal cs_s   : std_logic_vector(1 downto 0);
+    signal mosi_s : std_logic_vector(1 downto 0);
+
 begin
 
-    spi_sync_dbg: entity work.bit_sync generic map (
-        STAGES  => 2,
-        RST_VAL => '0'
-    ) port map (
-        clk_i => clk_i,
-        rst_i => rst_i,
-        d_i   => dbg_i,
-        q_o   => dbg_o
-    );
+    sync_proc: process(clk_i)
+    begin
+        if rising_edge(clk_i) then
+            if rst_i = '1' then
+                dbg_s  <= (others => '0');
+                sclk_s <= (others => '0');
+                cs_s   <= (others => '1');
+                mosi_s <= (others => '0');
+            else
+                dbg_s  <= dbg_s(0) & dbg_i;
+                sclk_s <= sclk_s(0) & sclk_i;
+                cs_s   <= cs_s(0) & cs_n_i;
+                mosi_s <= mosi_s(0) & mosi_i;
+            end if;
+        end if;
+    end process sync_proc;
 
-    spi_sync_sclk: entity work.bit_sync generic map (
-        STAGES  => 2,
-        RST_VAL => '0'
-    ) port map (
-        clk_i => clk_i,
-        rst_i => rst_i,
-        d_i   => sclk_i,
-        q_o   => sclk_o
-    );
-
-    spi_sync_cs: entity work.bit_sync generic map (
-        STAGES  => 2,
-        RST_VAL => '1'
-    ) port map (
-        clk_i => clk_i,
-        rst_i => rst_i,
-        d_i   => cs_n_i,
-        q_o   => cs_n_o
-    );
-
-    spi_sync_mosi: entity work.bit_sync generic map (
-        STAGES  => 2,
-        RST_VAL => '0'
-    ) port map (
-        clk_i => clk_i,
-        rst_i => rst_i,
-        d_i   => mosi_i,
-        q_o   => mosi_o
-    );
+    dbg_o  <= dbg_s(1);
+    sclk_o <= sclk_s(1);
+    cs_n_o <= cs_s(1);
+    mosi_o <= mosi_s(1);
 
 end architecture rtl;
