@@ -35,11 +35,13 @@ entity spi_port is
         m_tx_ready_o : out std_logic;
         m_tx_data_i  : in  std_logic_vector(WIDTH-1 downto 0);
         m_tx_bits_i  : in  std_logic_vector(CNT_BITS-1 downto 0);
+        m_rx_ready_i : in  std_logic;
         m_rx_data_o  : out std_logic_vector(WIDTH-1 downto 0);
         m_rx_valid_o : out std_logic;
         s_tx_valid_i : in  std_logic;
         s_tx_ready_o : out std_logic;
         s_tx_data_i  : in  std_logic_vector(WIDTH-1 downto 0);
+        s_rx_ready_i : in  std_logic;
         s_rx_data_o  : out std_logic_vector(WIDTH-1 downto 0);
         s_rx_bits_o  : out std_logic_vector(CNT_BITS-1 downto 0);
         s_rx_valid_o : out std_logic
@@ -66,6 +68,7 @@ architecture rtl of spi_port is
     signal sh_rx    : std_logic_vector(WIDTH-1 downto 0);
     signal sh_bits  : std_logic_vector(CNT_BITS-1 downto 0);
     signal sh_end   : std_logic;
+    signal sh_rxr   : std_logic;
     signal sh_valid : std_logic;
 
 begin
@@ -107,6 +110,7 @@ begin
     sh_txv <= s_tx_valid_i when dbg = '1' else sh_start;
     sh_din <= s_mosi       when dbg = '1' else miso_i;
     sh_tx  <= s_tx_data_i  when dbg = '1' else m_tx_data_i;
+    sh_rxr <= s_rx_ready_i when dbg = '1' else m_rx_ready_i;
 
     spi_port_shift: entity work.spi_shift generic map (
         WIDTH    => WIDTH,
@@ -125,6 +129,7 @@ begin
         tx_data_i  => sh_tx,
         tx_bits_i  => m_tx_bits_i,
         tx_end_o   => sh_end,
+        rx_ready_i => sh_rxr,
         rx_data_o  => sh_rx,
         rx_bits_o  => sh_bits,
         rx_valid_o => sh_valid

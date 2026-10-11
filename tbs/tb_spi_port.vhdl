@@ -22,10 +22,13 @@
 -- with no reply written and must send zeros. Both slaves get the same
 -- reply, so they drive MISO with the same value once it is loaded;
 -- until then each shows a leftover bit, so MISO contention is not
--- checked in this phase (every reply bit the host samples is).
+-- checked in this phase (every reply bit the host samples is). The
+-- host reads each word with a one-cycle rx_ready pulse, except one: it
+-- leaves that word unread, sends the next frame and checks that the
+-- buffer still holds the old word, so the new one is dropped.
 --
 -- Checks: the word, bit count and single rx_valid the slave reports
--- after each frame, the word the master receives (the first tx_bits
+-- after each frame (the clients hold rx_ready high in phases 0 and 1), the word the master receives (the first tx_bits
 -- bits of the reply), CS# high time, SCK phases, MOSI/MISO changing
 -- only while SCK is low, frame length, pad contention, pin release,
 -- that the unused role inside each port stays silent while its client
@@ -55,6 +58,7 @@ architecture sim of tb_spi_port is
     constant CS_MIN     : integer := 2;
     constant FRAME_CYC  : integer := 2 * WIDTH * SCK_DIV;
     constant HOST_MAX   : integer := WIDTH + 8;
+    constant HOST_HOLD  : integer := 5;
     constant MAX_FRAMES : integer := 2 * NUM_FRAMES + 1;
     constant TIMEOUT    : time    := (2 * NUM_FRAMES * (FRAME_CYC + 100) + HOST_FRAMES * (2 * HOST_MAX * SCK_DIV + 100)) * CLK_PERIOD;
 
@@ -108,6 +112,7 @@ architecture sim of tb_spi_port is
     signal host_mosi : std_logic := '0';
     signal host_resp : word_t    := (others => '0');
     signal host_wr   : std_logic := '0';
+    signal host_rd   : std_logic := '0';
 
     -- pads and their logic levels
     signal sclk_pad : std_logic;
@@ -133,8 +138,10 @@ architecture sim of tb_spi_port is
     signal a_m_tx_ready : std_logic;
     signal a_m_tx_data  : word_t;
     signal a_m_tx_bits  : bits_t;
+    signal a_m_rx_ready : std_logic;
     signal a_m_rx_data  : word_t;
     signal a_m_rx_valid : std_logic;
+    signal a_s_rx_ready : std_logic;
     signal a_s_rx_data  : word_t;
     signal a_s_rx_bits  : std_logic_vector(CNT_BITS-1 downto 0);
     signal a_s_rx_valid : std_logic;
@@ -156,8 +163,10 @@ architecture sim of tb_spi_port is
     signal b_m_tx_ready : std_logic;
     signal b_m_tx_data  : word_t;
     signal b_m_tx_bits  : bits_t;
+    signal b_m_rx_ready : std_logic;
     signal b_m_rx_data  : word_t;
     signal b_m_rx_valid : std_logic;
+    signal b_s_rx_ready : std_logic;
     signal b_s_rx_data  : word_t;
     signal b_s_rx_bits  : std_logic_vector(CNT_BITS-1 downto 0);
     signal b_s_rx_valid : std_logic;
@@ -223,11 +232,13 @@ begin
         m_tx_ready_o => a_m_tx_ready,
         m_tx_data_i  => a_m_tx_data,
         m_tx_bits_i  => a_m_tx_bits,
+        m_rx_ready_i => a_m_rx_ready,
         m_rx_data_o  => a_m_rx_data,
         m_rx_valid_o => a_m_rx_valid,
         s_tx_valid_i => a_s_tx_valid,
         s_tx_ready_o => a_s_tx_ready,
         s_tx_data_i  => a_s_tx_data,
+        s_rx_ready_i => a_s_rx_ready,
         s_rx_data_o  => a_s_rx_data,
         s_rx_bits_o  => a_s_rx_bits,
         s_rx_valid_o => a_s_rx_valid
@@ -258,11 +269,13 @@ begin
         m_tx_ready_o => b_m_tx_ready,
         m_tx_data_i  => b_m_tx_data,
         m_tx_bits_i  => b_m_tx_bits,
+        m_rx_ready_i => b_m_rx_ready,
         m_rx_data_o  => b_m_rx_data,
         m_rx_valid_o => b_m_rx_valid,
         s_tx_valid_i => b_s_tx_valid,
         s_tx_ready_o => b_s_tx_ready,
         s_tx_data_i  => b_s_tx_data,
+        s_rx_ready_i => b_s_rx_ready,
         s_rx_data_o  => b_s_rx_data,
         s_rx_bits_o  => b_s_rx_bits,
         s_rx_valid_o => b_s_rx_valid
@@ -301,11 +314,15 @@ begin
     m_tx_ready   <= a_m_tx_ready when swap = '0' else b_m_tx_ready;
     m_rx_data    <= a_m_rx_data  when swap = '0' else b_m_rx_data;
     m_rx_valid   <= a_m_rx_valid when swap = '0' else b_m_rx_valid;
+    a_m_rx_ready <= '1'          when swap = '0' else junk_en;
+    b_m_rx_ready <= '1'          when swap = '1' else junk_en;
 
     a_s_tx_valid <= host_wr   when host_en = '1' else '1'       when swap = '1' else junk_en;
     a_s_tx_data  <= host_resp when host_en = '1' else s_tx_data when swap = '1' else (others => '1');
     b_s_tx_valid <= host_wr   when host_en = '1' else '1'       when swap = '0' else junk_en;
     b_s_tx_data  <= host_resp when host_en = '1' else s_tx_data when swap = '0' else (others => '1');
+    a_s_rx_ready <= host_rd   when host_en = '1' else '1'       when swap = '1' else junk_en;
+    b_s_rx_ready <= host_rd   when host_en = '1' else '1'       when swap = '0' else junk_en;
     s_rx_data   <= b_s_rx_data  when swap = '0' else a_s_rx_data;
     s_rx_bits   <= b_s_rx_bits  when swap = '0' else a_s_rx_bits;
     s_rx_valid  <= b_s_rx_valid when swap = '0' else a_s_rx_valid;
@@ -329,6 +346,8 @@ begin
         variable hbits   : std_logic_vector(HOST_MAX-1 downto 0);
         variable hrx     : std_logic_vector(HOST_MAX-1 downto 0);
         variable exp_rx  : word_t;
+        variable sv_rx   : word_t;
+        variable sv_k    : integer := 0;
         variable len     : integer;
         variable n_b2b   : natural := 0;
         variable n_mshrt : natural := 0;
@@ -528,6 +547,11 @@ begin
                 end if;
             end loop;
 
+            if f = HOST_HOLD + 1 then
+                cycles(10);
+                k      := sv_k;
+                exp_rx := sv_rx;
+            end if;
             for c in 1 to 10 loop
                 wait until rising_edge(clk);
                 exit when a_s_rx_valid = '1';
@@ -540,6 +564,17 @@ begin
             assert a_s_rx_data = exp_rx and b_s_rx_data = exp_rx
                 report "host: frame " & integer'image(f) & " word is " & hex(a_s_rx_data) &
                        ", expected " & hex(exp_rx) severity error;
+            if f = HOST_HOLD then
+                sv_k  := k;
+                sv_rx := exp_rx;
+            else
+                host_rd <= '1';
+                cycles(1);
+                host_rd <= '0';
+                cycles(1);
+                assert a_s_rx_valid = '0' and b_s_rx_valid = '0'
+                    report "host: frame " & integer'image(f) & " still valid after rx_ready" severity error;
+            end if;
 
             if n = 0 then
                 n_empty := n_empty + 1;
@@ -599,7 +634,7 @@ begin
 
     master_rx_proc: process
         variable j    : natural   := 0;
-        variable cs_p : std_logic := '1';
+        variable hi   : natural   := 0;
     begin
         wait until rising_edge(clk);
         if chk_on = '1' and m_rx_valid = '1' then
@@ -608,12 +643,16 @@ begin
             assert m_rx_data = top_bits(plan_sresp(j), plan_mlen(j))
                 report "master: frame " & integer'image(j) & " word is " & hex(m_rx_data) &
                        ", expected " & hex(top_bits(plan_sresp(j), plan_mlen(j))) severity error;
-            assert cs_n_in = '1' and cs_p = '0'
-                report "master: frame " & integer'image(j) & " not flagged in the first cycle with CS# high" severity error;
+            assert cs_n_in = '1' and hi = 1
+                report "master: frame " & integer'image(j) & " not flagged in the second cycle with CS# high" severity error;
             j := j + 1;
             m_rx_cnt <= j;
         end if;
-        cs_p := cs_n_in;
+        if cs_n_in = '1' then
+            hi := hi + 1;
+        else
+            hi := 0;
+        end if;
     end process master_rx_proc;
 
     ------------------------------------------------------------------
