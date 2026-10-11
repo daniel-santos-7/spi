@@ -72,12 +72,12 @@ Neither side knows about commands: what the words mean, and whether a frame of t
 
 A transmit and a receive shift register (`WIDTH` bits each) and a bit counter, moved by four one-cycle strobes. The client writes the transmit register directly; the received word goes to the active role's receive buffer. It does not know which side of the link it is on.
 
-- `start_i` (`CS#` falls): clears the receive register and the count, and sets `busy_reg` (cleared by `stop_i`).
+- `start_i` (`CS#` falls): clears the receive register and the count, and clears `ready_reg` (set again by `stop_i`).
 - `rise_i` (SCK rises): shifts `din_i` into the receive register and counts the bit, until the count reaches `WIDTH`; later bits are ignored.
 - `fall_i` (SCK falls): shifts the transmit register, with zeros shifted in, so `dout_o` (its MSB) shows the next bit, and zeros after the `WIDTH`-th.
 - `stop_i` (`CS#` rises): offers the word to the receive buffer and clears the transmit register if the frame had at least one bit (the count only returns to 0 at `start_i`), so an underrun after a shorter frame sends zeros, not what that frame left. After an empty frame the word written before it stays for the next one.
 - Write (`tx_push`: `tx_valid_i` and `tx_ready_o`): copies `tx_data_i` into the transmit register; `dout_o` is its MSB.
-- `tx_ready_o` (`busy_reg` low): the transmit register may take a word, only between frames. A second write before a frame replaces the first.
+- `tx_ready_o` (`ready_reg`): the transmit register may take a word, only between frames. A second write before a frame replaces the first.
 - `rx_valid_o` (`stop_i`), with the receive register on `rx_data_o` and the count on `rx_bits_o`: the word offered to the receive buffer.
 
 ## spi_ctrl
