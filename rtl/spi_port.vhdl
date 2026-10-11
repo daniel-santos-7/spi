@@ -35,16 +35,13 @@ entity spi_port is
         m_tx_ready_o : out std_logic;
         m_tx_data_i  : in  std_logic_vector(WIDTH-1 downto 0);
         m_tx_bits_i  : in  std_logic_vector(CNT_BITS-1 downto 0);
-        m_rx_ready_i : in  std_logic;
-        m_rx_data_o  : out std_logic_vector(WIDTH-1 downto 0);
-        m_rx_valid_o : out std_logic;
         s_tx_valid_i : in  std_logic;
         s_tx_ready_o : out std_logic;
         s_tx_data_i  : in  std_logic_vector(WIDTH-1 downto 0);
-        s_rx_ready_i : in  std_logic;
-        s_rx_data_o  : out std_logic_vector(WIDTH-1 downto 0);
-        s_rx_bits_o  : out std_logic_vector(CNT_BITS-1 downto 0);
-        s_rx_valid_o : out std_logic
+        rx_ready_i   : in  std_logic;
+        rx_data_o    : out std_logic_vector(WIDTH-1 downto 0);
+        rx_bits_o    : out std_logic_vector(CNT_BITS-1 downto 0);
+        rx_valid_o   : out std_logic
     );
 end entity spi_port;
 
@@ -70,13 +67,9 @@ architecture rtl of spi_port is
     signal sh_bits  : std_logic_vector(CNT_BITS-1 downto 0);
     signal sh_put   : std_logic;
 
-    signal m_rx_put   : std_logic;
-    signal s_rx_put   : std_logic;
-    signal m_rx_valid : std_logic;
-    signal m_rx_data  : std_logic_vector(WIDTH-1 downto 0);
-    signal s_rx_valid : std_logic;
-    signal s_rx_data  : std_logic_vector(WIDTH-1 downto 0);
-    signal s_rx_bits  : std_logic_vector(CNT_BITS-1 downto 0);
+    signal rx_valid : std_logic;
+    signal rx_data  : std_logic_vector(WIDTH-1 downto 0);
+    signal rx_bits  : std_logic_vector(CNT_BITS-1 downto 0);
 
 begin
 
@@ -140,28 +133,17 @@ begin
         rx_valid_o => sh_put
     );
 
-    m_rx_put <= sh_put and not dbg;
-    s_rx_put <= sh_put and dbg;
-
     rx_buf_proc: process(clk_i)
     begin
         if rising_edge(clk_i) then
             if rst_i = '1' then
-                m_rx_valid <= '0';
-                m_rx_data  <= (others => '0');
-                s_rx_valid <= '0';
-                s_rx_data  <= (others => '0');
-                s_rx_bits  <= (others => '0');
-            else
-                if m_rx_valid = '0' or m_rx_ready_i = '1' then
-                    m_rx_valid <= m_rx_put;
-                    m_rx_data  <= sh_rx;
-                end if;
-                if s_rx_valid = '0' or s_rx_ready_i = '1' then
-                    s_rx_valid <= s_rx_put;
-                    s_rx_data  <= sh_rx;
-                    s_rx_bits  <= sh_bits;
-                end if;
+                rx_valid <= '0';
+                rx_data  <= (others => '0');
+                rx_bits  <= (others => '0');
+            elsif rx_valid = '0' or rx_ready_i = '1' then
+                rx_valid <= sh_put;
+                rx_data  <= sh_rx;
+                rx_bits  <= sh_bits;
             end if;
         end if;
     end process rx_buf_proc;
@@ -169,12 +151,10 @@ begin
     mosi_o       <= sh_dout;
     miso_o       <= sh_dout;
     m_tx_ready_o <= sh_ready and not dbg;
-    m_rx_valid_o <= m_rx_valid;
-    m_rx_data_o  <= m_rx_data;
     s_tx_ready_o <= sh_ready and dbg;
-    s_rx_valid_o <= s_rx_valid;
-    s_rx_data_o  <= s_rx_data;
-    s_rx_bits_o  <= s_rx_bits;
+    rx_valid_o   <= rx_valid;
+    rx_data_o    <= rx_data;
+    rx_bits_o    <= rx_bits;
 
     sclk_oe <= not dbg;
     cs_n_oe <= not dbg;

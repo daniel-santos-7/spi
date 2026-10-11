@@ -35,9 +35,9 @@
 -- Checks: every word and bit count the slave reports, the
 -- words the master receives (the first tx_bits bits of the reply),
 -- CS# high time, SCK phases, MOSI/MISO changing only while SCK is low,
--- frame length, pad contention, pin release, that the unused role
--- inside each port stays silent while its client drives junk, and that
--- a master-strapped port takes no slave reply.
+-- frame length, pad contention, pin release, and that the unused
+-- role's transmit side inside each port takes no word while its client
+-- drives junk.
 --
 ----------------------------------------------------------------------
 
@@ -150,13 +150,10 @@ architecture sim of tb_spi_port is
     signal a_m_tx_ready : std_logic;
     signal a_m_tx_data  : word_t;
     signal a_m_tx_bits  : bits_t;
-    signal a_m_rx_ready : std_logic;
-    signal a_m_rx_data  : word_t;
-    signal a_m_rx_valid : std_logic;
-    signal a_s_rx_ready : std_logic;
-    signal a_s_rx_data  : word_t;
-    signal a_s_rx_bits  : std_logic_vector(CNT_BITS-1 downto 0);
-    signal a_s_rx_valid : std_logic;
+    signal a_rx_ready   : std_logic;
+    signal a_rx_data    : word_t;
+    signal a_rx_bits    : std_logic_vector(CNT_BITS-1 downto 0);
+    signal a_rx_valid   : std_logic;
     signal a_s_tx_valid : std_logic;
     signal a_s_tx_ready : std_logic;
     signal a_s_tx_data  : word_t;
@@ -175,13 +172,10 @@ architecture sim of tb_spi_port is
     signal b_m_tx_ready : std_logic;
     signal b_m_tx_data  : word_t;
     signal b_m_tx_bits  : bits_t;
-    signal b_m_rx_ready : std_logic;
-    signal b_m_rx_data  : word_t;
-    signal b_m_rx_valid : std_logic;
-    signal b_s_rx_ready : std_logic;
-    signal b_s_rx_data  : word_t;
-    signal b_s_rx_bits  : std_logic_vector(CNT_BITS-1 downto 0);
-    signal b_s_rx_valid : std_logic;
+    signal b_rx_ready   : std_logic;
+    signal b_rx_data    : word_t;
+    signal b_rx_bits    : std_logic_vector(CNT_BITS-1 downto 0);
+    signal b_rx_valid   : std_logic;
     signal b_s_tx_valid : std_logic;
     signal b_s_tx_ready : std_logic;
     signal b_s_tx_data  : word_t;
@@ -253,16 +247,13 @@ begin
         m_tx_ready_o => a_m_tx_ready,
         m_tx_data_i  => a_m_tx_data,
         m_tx_bits_i  => a_m_tx_bits,
-        m_rx_ready_i => a_m_rx_ready,
-        m_rx_data_o  => a_m_rx_data,
-        m_rx_valid_o => a_m_rx_valid,
         s_tx_valid_i => a_s_tx_valid,
         s_tx_ready_o => a_s_tx_ready,
         s_tx_data_i  => a_s_tx_data,
-        s_rx_ready_i => a_s_rx_ready,
-        s_rx_data_o  => a_s_rx_data,
-        s_rx_bits_o  => a_s_rx_bits,
-        s_rx_valid_o => a_s_rx_valid
+        rx_ready_i   => a_rx_ready,
+        rx_data_o    => a_rx_data,
+        rx_bits_o    => a_rx_bits,
+        rx_valid_o   => a_rx_valid
     );
 
     tb_spi_port_b: entity work.spi_port generic map (
@@ -290,16 +281,13 @@ begin
         m_tx_ready_o => b_m_tx_ready,
         m_tx_data_i  => b_m_tx_data,
         m_tx_bits_i  => b_m_tx_bits,
-        m_rx_ready_i => b_m_rx_ready,
-        m_rx_data_o  => b_m_rx_data,
-        m_rx_valid_o => b_m_rx_valid,
         s_tx_valid_i => b_s_tx_valid,
         s_tx_ready_o => b_s_tx_ready,
         s_tx_data_i  => b_s_tx_data,
-        s_rx_ready_i => b_s_rx_ready,
-        s_rx_data_o  => b_s_rx_data,
-        s_rx_bits_o  => b_s_rx_bits,
-        s_rx_valid_o => b_s_rx_valid
+        rx_ready_i   => b_rx_ready,
+        rx_data_o    => b_rx_data,
+        rx_bits_o    => b_rx_bits,
+        rx_valid_o   => b_rx_valid
     );
 
     sclk_pad <= a_sclk_o when a_sclk_oe = '1' else 'Z';
@@ -333,21 +321,19 @@ begin
     b_m_tx_data  <= m_tx_data    when swap = '1' else (others => '1');
     b_m_tx_bits  <= m_tx_bits    when swap = '1' else (others => '1');
     m_tx_ready   <= a_m_tx_ready when swap = '0' else b_m_tx_ready;
-    m_rx_data    <= a_m_rx_data  when swap = '0' else b_m_rx_data;
-    m_rx_valid   <= a_m_rx_valid when swap = '0' else b_m_rx_valid;
-    a_m_rx_ready <= '1'          when swap = '0' else junk_en;
-    b_m_rx_ready <= '1'          when swap = '1' else junk_en;
+    m_rx_data    <= a_rx_data    when swap = '0' else b_rx_data;
+    m_rx_valid   <= a_rx_valid   when swap = '0' else b_rx_valid;
 
     a_s_tx_valid <= host_wr   when host_en = '1' else s_tx_valid when swap = '1' else junk_en;
     a_s_tx_data  <= host_resp when host_en = '1' else s_tx_data  when swap = '1' else (others => '1');
     b_s_tx_valid <= host_wr   when host_en = '1' else s_tx_valid when swap = '0' else junk_en;
     b_s_tx_data  <= host_resp when host_en = '1' else s_tx_data  when swap = '0' else (others => '1');
-    a_s_rx_ready <= host_rd   when host_en = '1' else '1'        when swap = '1' else junk_en;
-    b_s_rx_ready <= host_rd   when host_en = '1' else '1'        when swap = '0' else junk_en;
+    a_rx_ready   <= host_rd   when host_en = '1' else '1';
+    b_rx_ready   <= host_rd   when host_en = '1' else '1';
     s_tx_ready   <= b_s_tx_ready when swap = '0' else a_s_tx_ready;
-    s_rx_data    <= b_s_rx_data  when swap = '0' else a_s_rx_data;
-    s_rx_bits    <= b_s_rx_bits  when swap = '0' else a_s_rx_bits;
-    s_rx_valid   <= b_s_rx_valid when swap = '0' else a_s_rx_valid;
+    s_rx_data    <= b_rx_data    when swap = '0' else a_rx_data;
+    s_rx_bits    <= b_rx_bits    when swap = '0' else a_rx_bits;
+    s_rx_valid   <= b_rx_valid   when swap = '0' else a_rx_valid;
 
     ------------------------------------------------------------------
     -- Stimulus: test plan, master client and software host
@@ -598,12 +584,12 @@ begin
                 for i in 0 to n-1 loop
                     exp_rx(n-1-i) := hbits(HOST_MAX-1-i);
                 end loop;
-                assert hw_n = hw0 and a_s_rx_valid = '1' and to_integer(unsigned(a_s_rx_bits)) = n and a_s_rx_data = exp_rx
+                assert hw_n = hw0 and a_rx_valid = '1' and to_integer(unsigned(a_rx_bits)) = n and a_rx_data = exp_rx
                     report "host: frame " & integer'image(f) & " not held in the buffer" severity error;
                 sv_rx := exp_rx;
                 sv_k  := n;
             elsif f = HOST_HOLD + 1 then
-                assert hw_n = hw0 and a_s_rx_valid = '1' and to_integer(unsigned(a_s_rx_bits)) = sv_k and a_s_rx_data = sv_rx
+                assert hw_n = hw0 and a_rx_valid = '1' and to_integer(unsigned(a_rx_bits)) = sv_k and a_rx_data = sv_rx
                     report "host: frame " & integer'image(f) & " overwrote an unread word" severity error;
                 host_rd <= '1';
                 cycles(3);
@@ -708,11 +694,11 @@ begin
     host_rx_proc: process
     begin
         wait until rising_edge(clk);
-        if host_en = '1' and host_rd = '1' and a_s_rx_valid = '1' then
-            assert b_s_rx_valid = '1' and b_s_rx_data = a_s_rx_data and b_s_rx_bits = a_s_rx_bits
+        if host_en = '1' and host_rd = '1' and a_rx_valid = '1' then
+            assert b_rx_valid = '1' and b_rx_data = a_rx_data and b_rx_bits = a_rx_bits
                 report "host: the two slaves report different words" severity error;
-            hw_data(hw_n) <= a_s_rx_data;
-            hw_bits(hw_n) <= to_integer(unsigned(a_s_rx_bits));
+            hw_data(hw_n) <= a_rx_data;
+            hw_bits(hw_n) <= to_integer(unsigned(a_rx_bits));
             hw_n <= hw_n + 1;
         end if;
     end process host_rx_proc;
@@ -726,7 +712,7 @@ begin
         variable hi : natural := 0;
     begin
         wait until rising_edge(clk);
-        if chk_on = '1' and m_rx_valid = '1' then
+        if chk_on = '1' and host_en = '0' and m_rx_valid = '1' then
             assert j < plan_wcnt
                 report "master: unexpected word " & hex(m_rx_data) severity error;
             assert m_rx_data = top_bits(plan_sresp(j), plan_wbits(j))
@@ -846,17 +832,17 @@ begin
                 if swap = '0' then
                     assert a_dbg_o = '0' and b_dbg_o = '1'
                         report "bus: dbg_o does not follow the strap" severity error;
-                    assert a_s_rx_valid = '0' and a_s_tx_ready = '0'
-                        report "bus: slave inside the master-strapped port A is active" severity error;
-                    assert b_m_rx_valid = '0'
-                        report "bus: master inside the slave-strapped port B ran a frame" severity error;
+                    assert a_s_tx_ready = '0'
+                        report "bus: slave inside the master-strapped port A takes a reply" severity error;
+                    assert b_m_tx_ready = '0'
+                        report "bus: master inside the slave-strapped port B takes a word" severity error;
                 else
                     assert a_dbg_o = '1' and b_dbg_o = '0'
                         report "bus: dbg_o does not follow the strap" severity error;
-                    assert b_s_rx_valid = '0' and b_s_tx_ready = '0'
-                        report "bus: slave inside the master-strapped port B is active" severity error;
-                    assert a_m_rx_valid = '0'
-                        report "bus: master inside the slave-strapped port A ran a frame" severity error;
+                    assert b_s_tx_ready = '0'
+                        report "bus: slave inside the master-strapped port B takes a reply" severity error;
+                    assert a_m_tx_ready = '0'
+                        report "bus: master inside the slave-strapped port A takes a word" severity error;
                 end if;
             end if;
 
