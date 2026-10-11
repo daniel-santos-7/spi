@@ -39,7 +39,6 @@ end entity spi_shift;
 architecture rtl of spi_shift is
 
     signal bit_cnt  : unsigned(CNT_BITS-1 downto 0);
-    signal rx_en    : std_logic;
     signal busy_reg : std_logic;
 
     signal tx_sh    : std_logic_vector(WIDTH-1 downto 0);
@@ -54,7 +53,6 @@ begin
     assert WIDTH >= 2 report "SPI shift: WIDTH must be at least 2." severity failure;
     assert 2**CNT_BITS > WIDTH report "SPI shift: CNT_BITS too small to count WIDTH." severity failure;
 
-    rx_en    <= '1' when rise_i = '1' and bit_cnt /= WIDTH else '0';
     tx_ready <= not busy_reg and not send_reg;
     tx_push  <= tx_valid_i and tx_ready;
 
@@ -78,7 +76,7 @@ begin
                 bit_cnt <= (others => '0');
             elsif start_i = '1' then
                 bit_cnt <= (others => '0');
-            elsif rx_en = '1' then
+            elsif rise_i = '1' and bit_cnt /= WIDTH then
                 bit_cnt <= bit_cnt + 1;
             end if;
         end if;
@@ -108,7 +106,7 @@ begin
                 rx_sh <= (others => '0');
             elsif start_i = '1' then
                 rx_sh <= (others => '0');
-            elsif rx_en = '1' then
+            elsif rise_i = '1' and bit_cnt /= WIDTH then
                 rx_sh <= rx_sh(WIDTH-2 downto 0) & din_i;
             end if;
         end if;
