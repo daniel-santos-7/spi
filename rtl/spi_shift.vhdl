@@ -82,12 +82,10 @@ begin
     tx_proc: process(clk_i)
     begin
         if rising_edge(clk_i) then
-            if rst_i = '1' then
+            if rst_i = '1' or (stop_i = '1' and bit_cnt /= 0) then
                 tx_sh <= (others => '0');
             elsif tx_push = '1' then
                 tx_sh <= tx_data_i;
-            elsif stop_i = '1' and bit_cnt /= 0 then
-                tx_sh <= (others => '0');
             elsif fall_i = '1' then
                 tx_sh <= tx_sh(WIDTH-2 downto 0) & '0';
             end if;
