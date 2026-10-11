@@ -42,7 +42,6 @@ architecture rtl of spi_shift is
     signal busy_reg : std_logic;
 
     signal tx_sh    : std_logic_vector(WIDTH-1 downto 0);
-    signal send_reg : std_logic;
     signal tx_ready : std_logic;
     signal tx_push  : std_logic;
 
@@ -53,7 +52,7 @@ begin
     assert WIDTH >= 2 report "SPI shift: WIDTH must be at least 2." severity failure;
     assert 2**CNT_BITS > WIDTH report "SPI shift: CNT_BITS too small to count WIDTH." severity failure;
 
-    tx_ready <= not busy_reg and not send_reg;
+    tx_ready <= not busy_reg;
     tx_push  <= tx_valid_i and tx_ready;
 
     busy_proc: process(clk_i)
@@ -86,13 +85,11 @@ begin
     begin
         if rising_edge(clk_i) then
             if rst_i = '1' then
-                tx_sh    <= (others => '0');
-                send_reg <= '0';
+                tx_sh <= (others => '0');
             elsif tx_push = '1' then
-                tx_sh    <= tx_data_i;
-                send_reg <= '1';
+                tx_sh <= tx_data_i;
             elsif stop_i = '1' and bit_cnt /= 0 then
-                send_reg <= '0';
+                tx_sh <= (others => '0');
             elsif fall_i = '1' then
                 tx_sh <= tx_sh(WIDTH-2 downto 0) & '0';
             end if;
@@ -112,7 +109,7 @@ begin
         end if;
     end process rx_proc;
 
-    dout_o     <= tx_sh(WIDTH-1) and send_reg;
+    dout_o     <= tx_sh(WIDTH-1);
     tx_ready_o <= tx_ready;
     rx_data_o  <= rx_sh;
     rx_bits_o  <= std_logic_vector(bit_cnt);

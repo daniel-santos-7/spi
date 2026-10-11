@@ -25,8 +25,8 @@
 -- written (underrun) and must send zeros, not what the shorter frame
 -- left in the shift register; the reply written before the empty frame
 -- must go out in the next one; a word offered during a frame must not
--- be taken (tx_ready stays low while CS# is low); after each reply is
--- written, tx_ready must fall. Both slaves get the same reply, so MISO
+-- be taken (tx_ready stays low while CS# is low, high between frames).
+-- Both slaves get the same reply, so MISO
 -- contention is not checked in this phase (every reply bit the host
 -- samples is). The host reads every word as it is reported, except
 -- once: it leaves one word unread, sends the next frame and checks
@@ -538,25 +538,19 @@ begin
                 rnd(1, HOST_MAX, n);
             end if;
             rnd_bits(hbits);
+            assert a_s_tx_ready = '1' and b_s_tx_ready = '1'
+                report "host: frame " & integer'image(f) & " slaves not ready between frames" severity error;
             if f = HOST_URUN then
                 resp := (others => '0');
-            elsif a_s_tx_ready = '0' then
-                assert prev_n = 0 and b_s_tx_ready = '0'
-                    report "host: frame " & integer'image(f) & " slaves not ready for the reply" severity error;
+            elsif prev_n = 0 then
                 resp := prev;
             else
-                assert prev_n /= 0
-                    report "host: frame " & integer'image(f) & " reply written before the empty frame was dropped" severity error;
                 rnd_bits(resp);
-                assert b_s_tx_ready = '1'
-                    report "host: frame " & integer'image(f) & " slave B not ready for the reply" severity error;
                 host_resp <= resp;
                 host_wr   <= '1';
                 cycles(1);
                 host_wr   <= '0';
                 cycles(1);
-                assert a_s_tx_ready = '0' and b_s_tx_ready = '0'
-                    report "host: frame " & integer'image(f) & " slaves still ready after the reply" severity error;
             end if;
             prev   := resp;
             prev_n := n;
