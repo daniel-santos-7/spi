@@ -110,8 +110,8 @@ architecture sim of tb_spi_port is
     signal a_mosi_oe    : std_logic;
     signal a_miso_o     : std_logic;
     signal a_miso_oe    : std_logic;
-    signal a_m_start    : std_logic;
-    signal a_m_ready    : std_logic;
+    signal a_m_tx_valid : std_logic;
+    signal a_m_tx_ready : std_logic;
     signal a_m_tx_data  : word_t;
     signal a_m_rx_data  : word_t;
     signal a_m_rx_valid : std_logic;
@@ -130,8 +130,8 @@ architecture sim of tb_spi_port is
     signal b_mosi_oe    : std_logic;
     signal b_miso_o     : std_logic;
     signal b_miso_oe    : std_logic;
-    signal b_m_start    : std_logic;
-    signal b_m_ready    : std_logic;
+    signal b_m_tx_valid : std_logic;
+    signal b_m_tx_ready : std_logic;
     signal b_m_tx_data  : word_t;
     signal b_m_rx_data  : word_t;
     signal b_m_rx_valid : std_logic;
@@ -141,8 +141,8 @@ architecture sim of tb_spi_port is
     signal b_s_tx_data  : word_t;
 
     -- master client (whichever port is strapped as master)
-    signal m_start    : std_logic := '0';
-    signal m_ready    : std_logic;
+    signal m_tx_valid : std_logic := '0';
+    signal m_tx_ready : std_logic;
     signal m_tx_data  : word_t    := (others => '0');
     signal m_rx_data  : word_t;
     signal m_rx_valid : std_logic;
@@ -192,8 +192,8 @@ begin
         miso_i       => miso_in,
         miso_o       => a_miso_o,
         miso_oe      => a_miso_oe,
-        m_start_i    => a_m_start,
-        m_ready_o    => a_m_ready,
+        m_tx_valid_i => a_m_tx_valid,
+        m_tx_ready_o => a_m_tx_ready,
         m_tx_data_i  => a_m_tx_data,
         m_rx_data_o  => a_m_rx_data,
         m_rx_valid_o => a_m_rx_valid,
@@ -224,8 +224,8 @@ begin
         miso_i       => miso_in,
         miso_o       => b_miso_o,
         miso_oe      => b_miso_oe,
-        m_start_i    => b_m_start,
-        m_ready_o    => b_m_ready,
+        m_tx_valid_i => b_m_tx_valid,
+        m_tx_ready_o => b_m_tx_ready,
         m_tx_data_i  => b_m_tx_data,
         m_rx_data_o  => b_m_rx_data,
         m_rx_valid_o => b_m_rx_valid,
@@ -257,15 +257,15 @@ begin
     miso_in <= to_x01(miso_pad);
 
     -- Clients go to the port in that role; the port in the other role
-    -- gets junk (start held high) once junk_en is set. In phase 2 both
+    -- gets junk (tx_valid held high) once junk_en is set. In phase 2 both
     -- slaves get the host's reply.
-    a_m_start   <= m_start   when swap = '0' else junk_en;
-    a_m_tx_data <= m_tx_data when swap = '0' else (others => '1');
-    b_m_start   <= m_start   when swap = '1' else junk_en;
-    b_m_tx_data <= m_tx_data when swap = '1' else (others => '1');
-    m_ready     <= a_m_ready    when swap = '0' else b_m_ready;
-    m_rx_data   <= a_m_rx_data  when swap = '0' else b_m_rx_data;
-    m_rx_valid  <= a_m_rx_valid when swap = '0' else b_m_rx_valid;
+    a_m_tx_valid <= m_tx_valid   when swap = '0' else junk_en;
+    a_m_tx_data  <= m_tx_data    when swap = '0' else (others => '1');
+    b_m_tx_valid <= m_tx_valid   when swap = '1' else junk_en;
+    b_m_tx_data  <= m_tx_data    when swap = '1' else (others => '1');
+    m_tx_ready   <= a_m_tx_ready when swap = '0' else b_m_tx_ready;
+    m_rx_data    <= a_m_rx_data  when swap = '0' else b_m_rx_data;
+    m_rx_valid   <= a_m_rx_valid when swap = '0' else b_m_rx_valid;
 
     a_s_tx_data <= host_resp when host_en = '1' else s_tx_data when swap = '1' else (others => '1');
     b_s_tx_data <= host_resp when host_en = '1' else s_tx_data when swap = '0' else (others => '1');
@@ -371,14 +371,14 @@ begin
                 end if;
                 plan_fcnt <= frame + 1;
 
-                m_tx_data <= mtx;
-                m_start   <= '1';
+                m_tx_data  <= mtx;
+                m_tx_valid <= '1';
                 loop
                     wait until rising_edge(clk);
-                    exit when m_ready = '1';
+                    exit when m_tx_ready = '1';
                 end loop;
-                m_start <= '0';
-                frame   := frame + 1;
+                m_tx_valid <= '0';
+                frame      := frame + 1;
 
                 rnd(0, 3, v);
                 b2b := v = 0 and f < NUM_FRAMES;

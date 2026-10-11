@@ -5,7 +5,7 @@ Dual-role SPI in VHDL-93: one set of pins and one shift core, used either as a m
 - SPI mode 0, MSB first, one word each way per `CS#` frame
 - One shift core (`spi_shift`) in `spi_port`, shared by both roles: the master and the slave only produce the timing strobes that move it
 - One word size, `WIDTH` (default 64), for both roles
-- Master: generates SCK and `CS#` and runs one `WIDTH`-bit frame per `start`
+- Master: generates SCK and `CS#` and runs one `WIDTH`-bit frame per `tx_valid`/`tx_ready` handshake
 - Slave: follows an external SCK and `CS#`, frames of any length (words of up to `WIDTH` bits), oversampled by the system clock (no second clock domain)
 - Role chosen by a strap input
 - No tri-state: every pin is `_i`, `_o` and `_oe`
@@ -42,13 +42,13 @@ The input `dbg_i` picks the role:
 
 `spi_port` holds a single `spi_shift`, and `dbg` selects what drives it: the master's strobes, `miso_i` as data in and `m_tx_data_i`, or the slave's strobes, the synchronised MOSI and `s_tx_data_i`. The core's output bit goes to both `mosi_o` and `miso_o`; only the one whose `_oe` is set reaches the pin. The received word and count come out on both interfaces, and the core's `rx_valid` is routed to `m_rx_valid_o` or `s_rx_valid_o` by the role.
 
-Every asynchronous input goes through a two-flip-flop synchroniser, all in `spi_sync`: `dbg_i`, and SCK, `CS#` and MOSI on the way to the slave. The master needs none, since it only samples MISO at its own SCK edge. `dbg_o` gives the synchronised strap back to the client. It is a strap, not a run-time switch: change it only while the master is idle and no slave frame is in progress. While it is 1, the master's `start` is gated off, so no frame starts. While it is 0, the slave sees `CS#` as high, so master traffic never reaches it.
+Every asynchronous input goes through a two-flip-flop synchroniser, all in `spi_sync`: `dbg_i`, and SCK, `CS#` and MOSI on the way to the slave. The master needs none, since it only samples MISO at its own SCK edge. `dbg_o` gives the synchronised strap back to the client. It is a strap, not a run-time switch: change it only while the master is idle and no slave frame is in progress. While it is 1, the master's `tx_valid` is ignored, so no frame starts. While it is 0, the slave sees `CS#` as high, so master traffic never reaches it.
 
 ### Master interface (`m_`)
 
 SCK idles low, `CS#` falls together with the first MOSI bit, MOSI changes on SCK falling edges, and MISO is sampled in the system cycle in which SCK rises. SCK, MOSI and `CS#` all come straight from flip-flops.
 
-- **Start:** a frame starts when `m_start_i` and `m_ready_o` are both high; `m_tx_data_i` is loaded in that cycle and goes out MSB first. `m_ready_o` is high while the master is idle. Between two frames `CS#` stays high for at least 2 cycles (the cycle after the frame and the cycle in which the next `start` is taken); a client that needs a longer gap, such as a flash's tSHSL, waits before raising `m_start_i`.
+- **Start:** a frame starts when `m_tx_valid_i` and `m_tx_ready_o` are both high (a ready/valid handshake); `m_tx_data_i` is loaded in that cycle and goes out MSB first. `m_tx_ready_o` is high while the master is idle. Between two frames `CS#` stays high for at least 2 cycles (the cycle after the frame and the cycle in which the next word is accepted); a client that needs a longer gap, such as a flash's tSHSL, waits before raising `m_tx_valid_i`.
 - **Frame:** always `WIDTH` bits, with no gaps: `2·WIDTH·SCK_DIV` cycles with `CS#` low. `CS#` rises on the falling edge that ends the last bit.
 - **Receive:** `m_rx_valid_o` pulses in the first cycle with `CS#` high, with the `WIDTH` bits received on `m_rx_data_o` (the first bit in the MSB).
 
@@ -76,7 +76,7 @@ A transmit and a receive shift register (`WIDTH` bits each) and a bit counter, m
 
 ## spi_ctrl
 
-Produces the four strobes for the role `dbg_i` selects. As master, an FSM (`IDLE`, `SCK_LO`, `SCK_HI`, `STOP`) generates SCK and `CS#` from `SCK_DIV`, times the strobes to its own clock (so no edge detection is involved) and ends the frame when the core's count reaches `WIDTH`; its `stop` comes in the `STOP` cycle, the first one with `CS#` high, and `start_i` is ignored while `dbg_i` is 1. As slave, two registers detect the edges of the synchronised SCK and `CS#`.
+Produces the four strobes for the role `dbg_i` selects. As master, an FSM (`IDLE`, `SCK_LO`, `SCK_HI`, `STOP`) generates SCK and `CS#` from `SCK_DIV`, times the strobes to its own clock (so no edge detection is involved) and ends the frame when the core's count reaches `WIDTH`; its `stop` comes in the `STOP` cycle, the first one with `CS#` high, and `tx_valid_i` is ignored while `dbg_i` is 1. As slave, two registers detect the edges of the synchronised SCK and `CS#`.
 
 ## License
 

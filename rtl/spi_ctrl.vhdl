@@ -16,20 +16,20 @@ entity spi_ctrl is
         CNT_BITS : positive := 7
     );
     port (
-        clk_i   : in  std_logic;
-        rst_i   : in  std_logic;
-        dbg_i   : in  std_logic;
-        sclk_i  : in  std_logic;  -- sclk_i and cs_n_i must already be
-        cs_n_i  : in  std_logic;  -- synchronised to clk_i (spi_port does it)
-        sclk_o  : out std_logic;
-        cs_n_o  : out std_logic;
-        start_i : in  std_logic;
-        ready_o : out std_logic;
-        bits_i  : in  std_logic_vector(CNT_BITS-1 downto 0);
-        start_o : out std_logic;
-        stop_o  : out std_logic;
-        rise_o  : out std_logic;
-        fall_o  : out std_logic
+        clk_i      : in  std_logic;
+        rst_i      : in  std_logic;
+        dbg_i      : in  std_logic;
+        sclk_i     : in  std_logic;  -- sclk_i and cs_n_i must already be
+        cs_n_i     : in  std_logic;  -- synchronised to clk_i (spi_port does it)
+        sclk_o     : out std_logic;
+        cs_n_o     : out std_logic;
+        tx_valid_i : in  std_logic;
+        tx_ready_o : out std_logic;
+        bits_i     : in  std_logic_vector(CNT_BITS-1 downto 0);
+        start_o    : out std_logic;
+        stop_o     : out std_logic;
+        rise_o     : out std_logic;
+        fall_o     : out std_logic
     );
 end entity spi_ctrl;
 
@@ -62,7 +62,7 @@ begin
 
     cnt_end  <= '1' when cnt = SCK_DIV-1 else '0';
     bits_end <= '1' when unsigned(bits_i) = WIDTH else '0';
-    m_start  <= start_i and ready and not dbg_i;
+    m_start  <= tx_valid_i and ready and not dbg_i;
 
     fsm_proc: process(clk_i)
     begin
@@ -145,12 +145,12 @@ begin
     s_rise  <= sclk_i and not sclk_reg and not cs_n_i;
     s_fall  <= sclk_reg and not sclk_i and not cs_n_i;
 
-    sclk_o  <= sclk;
-    cs_n_o  <= cs_n;
-    ready_o <= ready;
-    start_o <= s_start when dbg_i = '1' else m_start;
-    stop_o  <= s_stop  when dbg_i = '1' else stop_reg;
-    rise_o  <= s_rise  when dbg_i = '1' else m_rise;
-    fall_o  <= s_fall  when dbg_i = '1' else m_fall;
+    sclk_o     <= sclk;
+    cs_n_o     <= cs_n;
+    tx_ready_o <= ready;
+    start_o    <= s_start when dbg_i = '1' else m_start;
+    stop_o     <= s_stop  when dbg_i = '1' else stop_reg;
+    rise_o     <= s_rise  when dbg_i = '1' else m_rise;
+    fall_o     <= s_fall  when dbg_i = '1' else m_fall;
 
 end architecture rtl;

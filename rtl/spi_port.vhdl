@@ -31,8 +31,8 @@ entity spi_port is
         miso_i       : in  std_logic;
         miso_o       : out std_logic;
         miso_oe      : out std_logic;
-        m_start_i    : in  std_logic;
-        m_ready_o    : out std_logic;
+        m_tx_valid_i : in  std_logic;
+        m_tx_ready_o : out std_logic;
         m_tx_data_i  : in  std_logic_vector(WIDTH-1 downto 0);
         m_rx_data_o  : out std_logic_vector(WIDTH-1 downto 0);
         m_rx_valid_o : out std_logic;
@@ -91,8 +91,8 @@ begin
         cs_n_i  => s_cs_n_s,
         sclk_o  => sclk_o,
         cs_n_o  => cs_n_o,
-        start_i => m_start_i,
-        ready_o => m_ready_o,
+        tx_valid_i => m_tx_valid_i,
+        tx_ready_o => m_tx_ready_o,
         bits_i  => sh_bits,
         start_o => sh_start,
         stop_o  => sh_stop,
