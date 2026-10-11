@@ -7,13 +7,10 @@
 
 library IEEE;
 use IEEE.std_logic_1164.all;
-use IEEE.numeric_std.all;
 
 entity spi_ctrl is
     generic (
-        SCK_DIV  : positive := 1;
-        WIDTH    : positive := 64;
-        CNT_BITS : positive := 7
+        SCK_DIV : positive := 1
     );
     port (
         clk_i      : in  std_logic;
@@ -25,7 +22,7 @@ entity spi_ctrl is
         cs_n_o     : out std_logic;
         tx_valid_i : in  std_logic;
         tx_ready_o : out std_logic;
-        bits_i     : in  std_logic_vector(CNT_BITS-1 downto 0);
+        tx_end_i   : in  std_logic;
         start_o    : out std_logic;
         stop_o     : out std_logic;
         rise_o     : out std_logic;
@@ -45,7 +42,6 @@ architecture rtl of spi_ctrl is
     signal ready    : std_logic;
     signal cnt_en   : std_logic;
     signal cnt_end  : std_logic;
-    signal bits_end : std_logic;
 
     signal sclk_reg : std_logic;
     signal cs_n_reg : std_logic;
@@ -61,7 +57,6 @@ architecture rtl of spi_ctrl is
 begin
 
     cnt_end  <= '1' when cnt = SCK_DIV-1 else '0';
-    bits_end <= '1' when unsigned(bits_i) = WIDTH else '0';
     m_start  <= tx_valid_i and ready and not dbg_i;
 
     fsm_proc: process(clk_i)
@@ -91,7 +86,7 @@ begin
                     when SCK_HI =>
                         if cnt_end = '1' then
                             sclk <= '0';
-                            if bits_end = '1' then
+                            if tx_end_i = '1' then
                                 state    <= STOP;
                                 cs_n     <= '1';
                                 cnt_en   <= '0';

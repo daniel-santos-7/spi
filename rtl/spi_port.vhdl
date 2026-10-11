@@ -34,12 +34,15 @@ entity spi_port is
         m_tx_valid_i : in  std_logic;
         m_tx_ready_o : out std_logic;
         m_tx_data_i  : in  std_logic_vector(WIDTH-1 downto 0);
+        m_tx_bits_i  : in  std_logic_vector(CNT_BITS-1 downto 0);
         m_rx_data_o  : out std_logic_vector(WIDTH-1 downto 0);
         m_rx_valid_o : out std_logic;
+        s_tx_valid_i : in  std_logic;
+        s_tx_ready_o : out std_logic;
+        s_tx_data_i  : in  std_logic_vector(WIDTH-1 downto 0);
         s_rx_data_o  : out std_logic_vector(WIDTH-1 downto 0);
         s_rx_bits_o  : out std_logic_vector(CNT_BITS-1 downto 0);
-        s_rx_valid_o : out std_logic;
-        s_tx_data_i  : in  std_logic_vector(WIDTH-1 downto 0)
+        s_rx_valid_o : out std_logic
     );
 end entity spi_port;
 
@@ -52,6 +55,8 @@ architecture rtl of spi_port is
     signal s_mosi   : std_logic;
 
     signal sh_start : std_logic;
+    signal sh_txv   : std_logic;
+    signal sh_txr   : std_logic;
     signal sh_stop  : std_logic;
     signal sh_rise  : std_logic;
     signal sh_fall  : std_logic;
@@ -60,6 +65,7 @@ architecture rtl of spi_port is
     signal sh_tx    : std_logic_vector(WIDTH-1 downto 0);
     signal sh_rx    : std_logic_vector(WIDTH-1 downto 0);
     signal sh_bits  : std_logic_vector(CNT_BITS-1 downto 0);
+    signal sh_end   : std_logic;
     signal sh_valid : std_logic;
 
 begin
@@ -80,28 +86,27 @@ begin
     s_cs_n <= cs_n_i or not dbg;
 
     spi_port_ctrl: entity work.spi_ctrl generic map (
-        SCK_DIV  => SCK_DIV,
-        WIDTH    => WIDTH,
-        CNT_BITS => CNT_BITS
+        SCK_DIV => SCK_DIV
     ) port map (
-        clk_i   => clk_i,
-        rst_i   => rst_i,
-        dbg_i   => dbg,
-        sclk_i  => s_sclk,
-        cs_n_i  => s_cs_n_s,
-        sclk_o  => sclk_o,
-        cs_n_o  => cs_n_o,
+        clk_i      => clk_i,
+        rst_i      => rst_i,
+        dbg_i      => dbg,
+        sclk_i     => s_sclk,
+        cs_n_i     => s_cs_n_s,
+        sclk_o     => sclk_o,
+        cs_n_o     => cs_n_o,
         tx_valid_i => m_tx_valid_i,
         tx_ready_o => m_tx_ready_o,
-        bits_i  => sh_bits,
-        start_o => sh_start,
-        stop_o  => sh_stop,
-        rise_o  => sh_rise,
-        fall_o  => sh_fall
+        tx_end_i   => sh_end,
+        start_o    => sh_start,
+        stop_o     => sh_stop,
+        rise_o     => sh_rise,
+        fall_o     => sh_fall
     );
 
-    sh_din <= s_mosi      when dbg = '1' else miso_i;
-    sh_tx  <= s_tx_data_i when dbg = '1' else m_tx_data_i;
+    sh_txv <= s_tx_valid_i when dbg = '1' else sh_start;
+    sh_din <= s_mosi       when dbg = '1' else miso_i;
+    sh_tx  <= s_tx_data_i  when dbg = '1' else m_tx_data_i;
 
     spi_port_shift: entity work.spi_shift generic map (
         WIDTH    => WIDTH,
@@ -115,7 +120,11 @@ begin
         fall_i     => sh_fall,
         din_i      => sh_din,
         dout_o     => sh_dout,
+        tx_valid_i => sh_txv,
+        tx_ready_o => sh_txr,
         tx_data_i  => sh_tx,
+        tx_bits_i  => m_tx_bits_i,
+        tx_end_o   => sh_end,
         rx_data_o  => sh_rx,
         rx_bits_o  => sh_bits,
         rx_valid_o => sh_valid
@@ -128,6 +137,7 @@ begin
     s_rx_data_o  <= sh_rx;
     s_rx_bits_o  <= sh_bits;
     s_rx_valid_o <= sh_valid and dbg;
+    s_tx_ready_o <= sh_txr and dbg;
 
     sclk_oe <= not dbg;
     cs_n_oe <= not dbg;

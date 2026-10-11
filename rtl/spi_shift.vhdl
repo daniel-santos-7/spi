@@ -23,7 +23,11 @@ entity spi_shift is
         fall_i     : in  std_logic;
         din_i      : in  std_logic;
         dout_o     : out std_logic;
+        tx_valid_i : in  std_logic;
+        tx_ready_o : out std_logic;
         tx_data_i  : in  std_logic_vector(WIDTH-1 downto 0);
+        tx_bits_i  : in  std_logic_vector(CNT_BITS-1 downto 0);
+        tx_end_o   : out std_logic;
         rx_data_o  : out std_logic_vector(WIDTH-1 downto 0);
         rx_bits_o  : out std_logic_vector(CNT_BITS-1 downto 0);
         rx_valid_o : out std_logic
@@ -32,14 +36,29 @@ end entity spi_shift;
 
 architecture rtl of spi_shift is
 
-    signal bit_cnt : unsigned(CNT_BITS-1 downto 0);
-    signal rx_sh   : std_logic_vector(WIDTH-1 downto 0);
-    signal tx_sh   : std_logic_vector(WIDTH-1 downto 0);
+    signal bit_cnt   : unsigned(CNT_BITS-1 downto 0);
+    signal rx_sh     : std_logic_vector(WIDTH-1 downto 0);
+    signal tx_sh     : std_logic_vector(WIDTH-1 downto 0);
+    signal tx_len    : unsigned(CNT_BITS-1 downto 0);
+    signal ready_reg : std_logic;
 
 begin
 
     assert WIDTH >= 2 report "SPI shift: WIDTH must be at least 2." severity failure;
     assert 2**CNT_BITS > WIDTH report "SPI shift: CNT_BITS too small to count WIDTH." severity failure;
+
+    ready_proc: process(clk_i)
+    begin
+        if rising_edge(clk_i) then
+            if rst_i = '1' then
+                ready_reg <= '1';
+            elsif start_i = '1' then
+                ready_reg <= '0';
+            elsif stop_i = '1' then
+                ready_reg <= '1';
+            end if;
+        end if;
+    end process ready_proc;
 
     cnt_proc: process(clk_i)
     begin
@@ -72,7 +91,7 @@ begin
         if rising_edge(clk_i) then
             if rst_i = '1' then
                 tx_sh <= (others => '0');
-            elsif start_i = '1' then
+            elsif tx_valid_i = '1' and ready_reg = '1' then
                 tx_sh <= tx_data_i;
             elsif fall_i = '1' then
                 tx_sh <= tx_sh(WIDTH-2 downto 0) & '0';
@@ -80,7 +99,20 @@ begin
         end if;
     end process tx_proc;
 
+    len_proc: process(clk_i)
+    begin
+        if rising_edge(clk_i) then
+            if rst_i = '1' then
+                tx_len <= (others => '0');
+            elsif tx_valid_i = '1' and ready_reg = '1' then
+                tx_len <= unsigned(tx_bits_i);
+            end if;
+        end if;
+    end process len_proc;
+
     dout_o     <= tx_sh(WIDTH-1);
+    tx_ready_o <= ready_reg;
+    tx_end_o   <= '1' when bit_cnt = tx_len or bit_cnt = WIDTH else '0';
     rx_data_o  <= rx_sh;
     rx_bits_o  <= std_logic_vector(bit_cnt);
     rx_valid_o <= stop_i;
