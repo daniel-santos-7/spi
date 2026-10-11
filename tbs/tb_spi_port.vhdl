@@ -12,14 +12,16 @@
 -- the slave, with a random tx_bits: mostly 1 to WIDTH bits, sometimes
 -- 0 or more than WIDTH, which must give a frame of WIDTH bits. The
 -- master client sometimes starts the next frame back to back,
--- otherwise it waits a random gap. The slave client keeps tx_valid
--- high with the next reply on tx_data, so the last word the port takes
--- before CS# falls is the one sent.
+-- otherwise it waits a random gap. The slave client writes each reply
+-- once, as soon as the frame is planned and the port is ready, which
+-- is between the end of one frame and the start of the next.
 --
 -- Phase 2 straps both ports as slaves and drives the pins from a
 -- software host, with frames of any length (empty, shorter, equal and
--- longer than WIDTH). One host frame, after a longer one, goes out
--- with no reply written and must send zeros. Both slaves get the same
+-- longer than WIDTH). One host frame, after a shorter one, goes out
+-- with no reply written (underrun) and must send zeros, not what the
+-- shorter frame left in the shift register. After each reply is
+-- written, tx_ready must fall. Both slaves get the same
 -- reply, so they drive MISO with the same value once it is loaded;
 -- until then each shows a leftover bit, so MISO contention is not
 -- checked in this phase (every reply bit the host samples is). The
@@ -184,7 +186,10 @@ architecture sim of tb_spi_port is
     signal m_rx_cnt   : natural := 0;
 
     -- slave client (whichever port is strapped as slave)
+    signal s_tx_valid : std_logic;
+    signal s_tx_ready : std_logic;
     signal s_tx_data  : word_t;
+    signal s_tx_cnt   : natural := 0;
     signal s_rx_data  : word_t;
     signal s_rx_bits  : std_logic_vector(CNT_BITS-1 downto 0);
     signal s_rx_valid : std_logic;
@@ -317,12 +322,13 @@ begin
     a_m_rx_ready <= '1'          when swap = '0' else junk_en;
     b_m_rx_ready <= '1'          when swap = '1' else junk_en;
 
-    a_s_tx_valid <= host_wr   when host_en = '1' else '1'       when swap = '1' else junk_en;
+    a_s_tx_valid <= host_wr   when host_en = '1' else s_tx_valid when swap = '1' else junk_en;
     a_s_tx_data  <= host_resp when host_en = '1' else s_tx_data when swap = '1' else (others => '1');
-    b_s_tx_valid <= host_wr   when host_en = '1' else '1'       when swap = '0' else junk_en;
+    b_s_tx_valid <= host_wr   when host_en = '1' else s_tx_valid when swap = '0' else junk_en;
     b_s_tx_data  <= host_resp when host_en = '1' else s_tx_data when swap = '0' else (others => '1');
     a_s_rx_ready <= host_rd   when host_en = '1' else '1'       when swap = '1' else junk_en;
     b_s_rx_ready <= host_rd   when host_en = '1' else '1'       when swap = '0' else junk_en;
+    s_tx_ready  <= b_s_tx_ready when swap = '0' else a_s_tx_ready;
     s_rx_data   <= b_s_rx_data  when swap = '0' else a_s_rx_data;
     s_rx_bits   <= b_s_rx_bits  when swap = '0' else a_s_rx_bits;
     s_rx_valid  <= b_s_rx_valid when swap = '0' else a_s_rx_valid;
@@ -497,11 +503,13 @@ begin
                 n := WIDTH;
             elsif f = 3 then
                 n := HOST_MAX;
+            elsif f = 4 then
+                n := WIDTH / 2;
             else
                 rnd(1, HOST_MAX, n);
             end if;
             rnd_bits(hbits);
-            if f = 4 then
+            if f = 5 then
                 resp := (others => '0');
             else
                 rnd_bits(resp);
@@ -511,6 +519,9 @@ begin
                 host_wr   <= '1';
                 cycles(1);
                 host_wr   <= '0';
+                cycles(1);
+                assert a_s_tx_ready = '0' and b_s_tx_ready = '0'
+                    report "host: frame " & integer'image(f) & " slaves still ready after the reply" severity error;
             end if;
             cycles(2);
 
@@ -606,7 +617,16 @@ begin
     -- Slave client: checks each received word, sets the next reply
     ------------------------------------------------------------------
 
-    s_tx_data <= plan_sresp(s_rx_cnt);
+    s_tx_data  <= plan_sresp(s_tx_cnt);
+    s_tx_valid <= '1' when s_tx_cnt < plan_fcnt and host_en = '0' else '0';
+
+    slave_tx_proc: process
+    begin
+        wait until rising_edge(clk);
+        if s_tx_valid = '1' and s_tx_ready = '1' then
+            s_tx_cnt <= s_tx_cnt + 1;
+        end if;
+    end process slave_tx_proc;
 
     slave_proc: process
         variable i : natural := 0;

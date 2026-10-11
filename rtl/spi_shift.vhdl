@@ -42,14 +42,16 @@ end entity spi_shift;
 
 architecture rtl of spi_shift is
 
-    signal bit_cnt   : unsigned(CNT_BITS-1 downto 0);
-    signal rx_sh     : std_logic_vector(WIDTH-1 downto 0);
-    signal tx_sh     : std_logic_vector(WIDTH-1 downto 0);
-    signal tx_len    : unsigned(CNT_BITS-1 downto 0);
-    signal ready_reg : std_logic;
-    signal rx_buf    : std_logic_vector(WIDTH-1 downto 0);
-    signal rx_cnt    : unsigned(CNT_BITS-1 downto 0);
-    signal valid_reg : std_logic;
+    signal bit_cnt      : unsigned(CNT_BITS-1 downto 0);
+    signal rx_sh        : std_logic_vector(WIDTH-1 downto 0);
+    signal tx_sh        : std_logic_vector(WIDTH-1 downto 0);
+    signal tx_len       : unsigned(CNT_BITS-1 downto 0);
+    signal ready_reg    : std_logic;
+    signal tx_valid_reg : std_logic;
+    signal send_reg     : std_logic;
+    signal rx_buf       : std_logic_vector(WIDTH-1 downto 0);
+    signal rx_cnt       : unsigned(CNT_BITS-1 downto 0);
+    signal rx_valid_reg : std_logic;
 
 begin
 
@@ -68,6 +70,32 @@ begin
             end if;
         end if;
     end process ready_proc;
+
+    tx_valid_proc: process(clk_i)
+    begin
+        if rising_edge(clk_i) then
+            if rst_i = '1' then
+                tx_valid_reg <= '0';
+            elsif start_i = '1' then
+                tx_valid_reg <= '0';
+            elsif tx_valid_i = '1' and ready_reg = '1' then
+                tx_valid_reg <= '1';
+            end if;
+        end if;
+    end process tx_valid_proc;
+
+    send_proc: process(clk_i)
+    begin
+        if rising_edge(clk_i) then
+            if rst_i = '1' then
+                send_reg <= '0';
+            elsif tx_valid_i = '1' and ready_reg = '1' and tx_valid_reg = '0' then
+                send_reg <= '1';
+            elsif start_i = '1' then
+                send_reg <= tx_valid_reg;
+            end if;
+        end if;
+    end process send_proc;
 
     cnt_proc: process(clk_i)
     begin
@@ -100,7 +128,7 @@ begin
         if rising_edge(clk_i) then
             if rst_i = '1' then
                 tx_sh <= (others => '0');
-            elsif tx_valid_i = '1' and ready_reg = '1' then
+            elsif tx_valid_i = '1' and ready_reg = '1' and tx_valid_reg = '0' then
                 tx_sh <= tx_data_i;
             elsif fall_i = '1' then
                 tx_sh <= tx_sh(WIDTH-2 downto 0) & '0';
@@ -113,7 +141,7 @@ begin
         if rising_edge(clk_i) then
             if rst_i = '1' then
                 tx_len <= (others => '0');
-            elsif tx_valid_i = '1' and ready_reg = '1' then
+            elsif tx_valid_i = '1' and ready_reg = '1' and tx_valid_reg = '0' then
                 tx_len <= unsigned(tx_bits_i);
             end if;
         end if;
@@ -123,28 +151,28 @@ begin
     begin
         if rising_edge(clk_i) then
             if rst_i = '1' then
-                valid_reg <= '0';
-                rx_buf    <= (others => '0');
-                rx_cnt    <= (others => '0');
-            elsif valid_reg = '1' then
+                rx_valid_reg <= '0';
+                rx_buf       <= (others => '0');
+                rx_cnt       <= (others => '0');
+            elsif rx_valid_reg = '1' then
                 if rx_ready_i = '1' then
-                    valid_reg <= stop_i;
-                    rx_buf    <= rx_sh;
-                    rx_cnt    <= bit_cnt;
+                    rx_valid_reg <= stop_i;
+                    rx_buf       <= rx_sh;
+                    rx_cnt       <= bit_cnt;
                 end if;
             else
-                valid_reg <= stop_i;
-                rx_buf    <= rx_sh;
-                rx_cnt    <= bit_cnt;
+                rx_valid_reg <= stop_i;
+                rx_buf       <= rx_sh;
+                rx_cnt       <= bit_cnt;
             end if;
         end if;
     end process buf_proc;
 
-    dout_o     <= tx_sh(WIDTH-1);
-    tx_ready_o <= ready_reg;
+    dout_o     <= tx_sh(WIDTH-1) and send_reg;
+    tx_ready_o <= ready_reg and not tx_valid_reg;
     tx_end_o   <= '1' when bit_cnt = tx_len or bit_cnt = WIDTH else '0';
     rx_data_o  <= rx_buf;
     rx_bits_o  <= std_logic_vector(rx_cnt);
-    rx_valid_o <= valid_reg;
+    rx_valid_o <= rx_valid_reg;
 
 end architecture rtl;
