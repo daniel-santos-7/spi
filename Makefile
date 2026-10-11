@@ -4,7 +4,7 @@ BUILD     := build
 GHDLFLAGS := --std=93 --workdir=$(BUILD)
 TOP       ?= spi_port
 
-RTL_SRCS  := rtl/spi_sync.vhdl rtl/spi_shift.vhdl rtl/spi_ctrl.vhdl rtl/spi_port.vhdl
+RTL_SRCS  := rtl/spi_sync.vhdl rtl/spi_buf.vhdl rtl/spi_shift.vhdl rtl/spi_ctrl.vhdl rtl/spi_port.vhdl
 TB_SRCS   := tbs/tb_spi_port.vhdl
 TB        ?= tb_spi_port
 GENERICS  ?=
