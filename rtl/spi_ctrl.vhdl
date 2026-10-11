@@ -7,10 +7,13 @@
 
 library IEEE;
 use IEEE.std_logic_1164.all;
+use IEEE.numeric_std.all;
 
 entity spi_ctrl is
     generic (
-        SCK_DIV : positive := 1
+        SCK_DIV  : positive := 1;
+        WIDTH    : positive := 32;
+        CNT_BITS : positive := 6
     );
     port (
         clk_i      : in  std_logic;
@@ -21,7 +24,7 @@ entity spi_ctrl is
         sclk_o     : out std_logic;
         cs_n_o     : out std_logic;
         tx_valid_i : in  std_logic;
-        tx_end_i   : in  std_logic;
+        tx_bits_i  : in  std_logic_vector(CNT_BITS-1 downto 0);
         start_o    : out std_logic;
         stop_o     : out std_logic;
         rise_o     : out std_logic;
@@ -41,6 +44,9 @@ architecture rtl of spi_ctrl is
     signal ready    : std_logic;
     signal cnt_en   : std_logic;
     signal cnt_end  : std_logic;
+    signal wcnt     : unsigned(CNT_BITS-1 downto 0);
+    signal wlen     : unsigned(CNT_BITS-1 downto 0);
+    signal m_end    : std_logic;
 
     signal sclk_reg : std_logic;
     signal cs_n_reg : std_logic;
@@ -57,6 +63,7 @@ begin
 
     cnt_end  <= '1' when cnt = SCK_DIV-1 else '0';
     m_start  <= tx_valid_i and ready and not dbg_i;
+    m_end    <= '1' when wcnt = wlen or wcnt = WIDTH else '0';
 
     fsm_proc: process(clk_i)
     begin
@@ -85,7 +92,7 @@ begin
                     when SCK_HI =>
                         if cnt_end = '1' then
                             sclk <= '0';
-                            if tx_end_i = '1' then
+                            if m_end = '1' then
                                 state    <= STOP;
                                 cs_n     <= '1';
                                 cnt_en   <= '0';
@@ -117,6 +124,21 @@ begin
             end if;
         end if;
     end process cnt_proc;
+
+    word_proc: process(clk_i)
+    begin
+        if rising_edge(clk_i) then
+            if rst_i = '1' then
+                wcnt <= (others => '0');
+                wlen <= (others => '0');
+            elsif m_start = '1' then
+                wcnt <= (others => '0');
+                wlen <= unsigned(tx_bits_i);
+            elsif m_rise = '1' then
+                wcnt <= wcnt + 1;
+            end if;
+        end if;
+    end process word_proc;
 
     m_rise <= '1' when state = SCK_LO and cnt_end = '1' else '0';
     m_fall <= '1' when state = SCK_HI and cnt_end = '1' else '0';

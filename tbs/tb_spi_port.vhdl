@@ -8,34 +8,32 @@
 -- Two spi_port instances, A and B, share one set of pads modelled as
 -- resolved signals with pull resistors (CS# up, SCK/MOSI/MISO down).
 -- Phase 0 straps A as master and B as slave; phase 1 swaps the roles.
--- Every frame is one to three words of random data from the master,
--- each answered by a random reply word from the slave. The master
--- client writes each word after the previous one, so the port chains
--- them under one CS#; the last word has a random tx_bits: mostly 1 to
--- WIDTH bits, sometimes 0 or more than WIDTH, which must give WIDTH
+-- Every frame is one word of random data from the master, answered by
+-- a random reply word from the slave, with a random tx_bits: mostly 1
+-- to WIDTH bits, sometimes 0 or more than WIDTH, which must give WIDTH
 -- bits. The master client sometimes starts the next frame as soon as
--- the last one ends, otherwise it waits a random gap. The slave client
--- writes the first reply of a frame once the previous frame has been
--- reported, and each further reply as soon as the port is ready.
+-- the last one is reported, otherwise it waits a random gap. The slave
+-- client writes the reply of a frame once the previous frame has been
+-- reported.
 --
 -- Phase 2 straps both ports as slaves and drives the pins from a
 -- software host, with frames of any length (empty, shorter, equal and
--- up to three words). The host writes one reply word per frame, so
--- any bit after the WIDTH-th must be 0. One host frame, after a
--- shorter one, goes out with no reply written (underrun) and must
--- send zeros, not what the shorter frame left in the shift register;
--- the reply written before the empty frame must go out in the next
--- one; a second word written during a frame of exactly WIDTH bits
--- must be dropped when CS# rises; after each reply is written,
--- tx_ready must fall. Both slaves
--- get the same reply, so MISO contention is not checked in this
--- phase (every reply bit the host samples is). The host reads every
--- word as it is reported, except once: it leaves one word unread,
--- sends the next frame and checks that the buffer still holds the old
--- word, so the new ones are dropped.
+-- longer than WIDTH). Each frame must be reported as one word: the
+-- first WIDTH bits, with a count of WIDTH for a longer frame. The host
+-- writes one reply word per frame, so any bit after the WIDTH-th must
+-- be 0. One host frame, after a shorter one, goes out with no reply
+-- written (underrun) and must send zeros, not what the shorter frame
+-- left in the shift register; the reply written before the empty frame
+-- must go out in the next one; a word offered during a frame must not
+-- be taken (tx_ready stays low while CS# is low); after each reply is
+-- written, tx_ready must fall. Both slaves get the same reply, so MISO
+-- contention is not checked in this phase (every reply bit the host
+-- samples is). The host reads every word as it is reported, except
+-- once: it leaves one word unread, sends the next frame and checks
+-- that the buffer still holds the old word, so the new one is dropped.
 --
--- Checks: every word, bit count and last flag the slave reports, the
--- words the master receives (the first tx_bits bits of the last reply),
+-- Checks: every word and bit count the slave reports, the
+-- words the master receives (the first tx_bits bits of the reply),
 -- CS# high time, SCK phases, MOSI/MISO changing only while SCK is low,
 -- frame length, pad contention, pin release, that the unused role
 -- inside each port stays silent while its client drives junk, and that
@@ -63,14 +61,13 @@ architecture sim of tb_spi_port is
 
     constant CLK_PERIOD : time    := 10 ns;
     constant CS_MIN     : integer := 2;
-    constant B2B_HI     : integer := 5;
-    constant MAX_WPF    : integer := 3;
-    constant FRAME_CYC  : integer := 2 * MAX_WPF * WIDTH * SCK_DIV;
+    constant B2B_HI     : integer := 4;
+    constant FRAME_CYC  : integer := 2 * WIDTH * SCK_DIV;
     constant HOST_MAX   : integer := 2 * WIDTH + 8;
     constant HOST_URUN  : integer := 5;
     constant HOST_HOLD  : integer := 6;
     constant MAX_FRAMES : integer := 2 * NUM_FRAMES + 1;
-    constant MAX_WORDS  : integer := MAX_WPF * MAX_FRAMES;
+    constant MAX_WORDS  : integer := MAX_FRAMES;
     constant HOST_WORDS : integer := 4 * HOST_FRAMES;
     constant TIMEOUT    : time    := (2 * NUM_FRAMES * (FRAME_CYC + 100) + HOST_FRAMES * (2 * HOST_MAX * SCK_DIV + 100)) * CLK_PERIOD;
 
@@ -128,7 +125,6 @@ architecture sim of tb_spi_port is
     signal hw_n      : natural   := 0;
     signal hw_data   : word_arr_t(0 to HOST_WORDS-1);
     signal hw_bits   : nat_arr_t(0 to HOST_WORDS-1);
-    signal hw_last   : std_logic_vector(0 to HOST_WORDS-1);
 
     -- pads and their logic levels
     signal sclk_pad : std_logic;
@@ -156,12 +152,10 @@ architecture sim of tb_spi_port is
     signal a_m_tx_bits  : bits_t;
     signal a_m_rx_ready : std_logic;
     signal a_m_rx_data  : word_t;
-    signal a_m_rx_last  : std_logic;
     signal a_m_rx_valid : std_logic;
     signal a_s_rx_ready : std_logic;
     signal a_s_rx_data  : word_t;
     signal a_s_rx_bits  : std_logic_vector(CNT_BITS-1 downto 0);
-    signal a_s_rx_last  : std_logic;
     signal a_s_rx_valid : std_logic;
     signal a_s_tx_valid : std_logic;
     signal a_s_tx_ready : std_logic;
@@ -183,12 +177,10 @@ architecture sim of tb_spi_port is
     signal b_m_tx_bits  : bits_t;
     signal b_m_rx_ready : std_logic;
     signal b_m_rx_data  : word_t;
-    signal b_m_rx_last  : std_logic;
     signal b_m_rx_valid : std_logic;
     signal b_s_rx_ready : std_logic;
     signal b_s_rx_data  : word_t;
     signal b_s_rx_bits  : std_logic_vector(CNT_BITS-1 downto 0);
-    signal b_s_rx_last  : std_logic;
     signal b_s_rx_valid : std_logic;
     signal b_s_tx_valid : std_logic;
     signal b_s_tx_ready : std_logic;
@@ -200,7 +192,6 @@ architecture sim of tb_spi_port is
     signal m_tx_data  : word_t    := (others => '0');
     signal m_tx_bits  : bits_t    := (others => '0');
     signal m_rx_data  : word_t;
-    signal m_rx_last  : std_logic;
     signal m_rx_valid : std_logic;
     signal m_rx_wcnt  : natural := 0;
     signal m_rx_fcnt  : natural := 0;
@@ -212,7 +203,6 @@ architecture sim of tb_spi_port is
     signal s_tx_cnt   : natural := 0;
     signal s_rx_data  : word_t;
     signal s_rx_bits  : std_logic_vector(CNT_BITS-1 downto 0);
-    signal s_rx_last  : std_logic;
     signal s_rx_valid : std_logic;
     signal s_rx_wcnt  : natural := 0;
     signal s_rx_fcnt  : natural := 0;
@@ -265,7 +255,6 @@ begin
         m_tx_bits_i  => a_m_tx_bits,
         m_rx_ready_i => a_m_rx_ready,
         m_rx_data_o  => a_m_rx_data,
-        m_rx_last_o  => a_m_rx_last,
         m_rx_valid_o => a_m_rx_valid,
         s_tx_valid_i => a_s_tx_valid,
         s_tx_ready_o => a_s_tx_ready,
@@ -273,7 +262,6 @@ begin
         s_rx_ready_i => a_s_rx_ready,
         s_rx_data_o  => a_s_rx_data,
         s_rx_bits_o  => a_s_rx_bits,
-        s_rx_last_o  => a_s_rx_last,
         s_rx_valid_o => a_s_rx_valid
     );
 
@@ -304,7 +292,6 @@ begin
         m_tx_bits_i  => b_m_tx_bits,
         m_rx_ready_i => b_m_rx_ready,
         m_rx_data_o  => b_m_rx_data,
-        m_rx_last_o  => b_m_rx_last,
         m_rx_valid_o => b_m_rx_valid,
         s_tx_valid_i => b_s_tx_valid,
         s_tx_ready_o => b_s_tx_ready,
@@ -312,7 +299,6 @@ begin
         s_rx_ready_i => b_s_rx_ready,
         s_rx_data_o  => b_s_rx_data,
         s_rx_bits_o  => b_s_rx_bits,
-        s_rx_last_o  => b_s_rx_last,
         s_rx_valid_o => b_s_rx_valid
     );
 
@@ -348,7 +334,6 @@ begin
     b_m_tx_bits  <= m_tx_bits    when swap = '1' else (others => '1');
     m_tx_ready   <= a_m_tx_ready when swap = '0' else b_m_tx_ready;
     m_rx_data    <= a_m_rx_data  when swap = '0' else b_m_rx_data;
-    m_rx_last    <= a_m_rx_last  when swap = '0' else b_m_rx_last;
     m_rx_valid   <= a_m_rx_valid when swap = '0' else b_m_rx_valid;
     a_m_rx_ready <= '1'          when swap = '0' else junk_en;
     b_m_rx_ready <= '1'          when swap = '1' else junk_en;
@@ -362,7 +347,6 @@ begin
     s_tx_ready   <= b_s_tx_ready when swap = '0' else a_s_tx_ready;
     s_rx_data    <= b_s_rx_data  when swap = '0' else a_s_rx_data;
     s_rx_bits    <= b_s_rx_bits  when swap = '0' else a_s_rx_bits;
-    s_rx_last    <= b_s_rx_last  when swap = '0' else a_s_rx_last;
     s_rx_valid   <= b_s_rx_valid when swap = '0' else a_s_rx_valid;
 
     ------------------------------------------------------------------
@@ -377,8 +361,6 @@ begin
         variable g       : integer;
         variable n       : integer;
         variable k       : integer;
-        variable nw      : integer;
-        variable total   : integer;
         variable frame   : natural := 0;
         variable word    : natural := 0;
         variable b2b     : boolean := false;
@@ -386,8 +368,6 @@ begin
         variable resp    : word_t;
         variable prev    : word_t := (others => '0');
         variable prev_n  : integer := -1;
-        variable wdat    : word_arr_t(0 to MAX_WPF-1);
-        variable wlen    : nat_arr_t(0 to MAX_WPF-1);
         variable hbits   : std_logic_vector(HOST_MAX-1 downto 0);
         variable hrx     : std_logic_vector(HOST_MAX-1 downto 0);
         variable exp_rx  : word_t;
@@ -398,7 +378,6 @@ begin
         variable sv_rx   : word_t;
         variable sv_k    : integer := 0;
         variable n_b2b   : natural := 0;
-        variable n_multi : natural := 0;
         variable n_mshrt : natural := 0;
         variable n_mclip : natural := 0;
         variable n_empty : natural := 0;
@@ -470,73 +449,48 @@ begin
 
             b2b := false;
             for f in 1 to NUM_FRAMES loop
-                rnd(1, MAX_WPF, nw);
-                if nw > 1 then
-                    n_multi := n_multi + 1;
+                rnd_bits(mtx);
+                rnd_bits(resp);
+                rnd(0, 7, v);
+                if v = 0 then
+                    len := 0;
+                elsif v = 1 and WIDTH < 2**CNT_BITS-1 then
+                    rnd(WIDTH+1, 2**CNT_BITS-1, len);
+                elsif v <= 3 then
+                    len := WIDTH;
+                else
+                    rnd(1, WIDTH, len);
                 end if;
-                total := 0;
-                for i in 0 to nw-1 loop
-                    rnd_bits(mtx);
-                    rnd_bits(resp);
-                    if i < nw-1 then
-                        rnd(0, 2, v);
-                        if v = 0 then
-                            len := 0;
-                        elsif v = 1 and WIDTH < 2**CNT_BITS-1 then
-                            rnd(WIDTH+1, 2**CNT_BITS-1, len);
-                        else
-                            len := WIDTH;
-                        end if;
-                        k := WIDTH;
-                        plan_wlast(word+i) <= '0';
-                    else
-                        rnd(0, 7, v);
-                        if v = 0 then
-                            len := 0;
-                        elsif v = 1 and WIDTH < 2**CNT_BITS-1 then
-                            rnd(WIDTH+1, 2**CNT_BITS-1, len);
-                        elsif v <= 3 then
-                            len := WIDTH;
-                        else
-                            rnd(1, WIDTH, len);
-                        end if;
-                        if len = 0 or len > WIDTH then
-                            k       := WIDTH;
-                            n_mclip := n_mclip + 1;
-                        else
-                            k := len;
-                        end if;
-                        if k < WIDTH then
-                            n_mshrt := n_mshrt + 1;
-                        end if;
-                        plan_wlast(word+i) <= '1';
-                    end if;
-                    plan_mtx(word+i)   <= mtx;
-                    plan_sresp(word+i) <= resp;
-                    plan_wbits(word+i) <= k;
-                    plan_wfrm(word+i)  <= frame;
-                    wdat(i) := mtx;
-                    wlen(i) := len;
-                    total   := total + k;
-                end loop;
-                plan_flen(frame) <= total;
+                if len = 0 or len > WIDTH then
+                    k       := WIDTH;
+                    n_mclip := n_mclip + 1;
+                else
+                    k := len;
+                end if;
+                if k < WIDTH then
+                    n_mshrt := n_mshrt + 1;
+                end if;
+                plan_wlast(word)  <= '1';
+                plan_mtx(word)    <= mtx;
+                plan_sresp(word)  <= resp;
+                plan_wbits(word)  <= k;
+                plan_wfrm(word)   <= frame;
+                plan_flen(frame)  <= k;
                 if b2b then
                     plan_b2b(frame) <= '1';
                 end if;
-                plan_wcnt <= word + nw;
+                plan_wcnt <= word + 1;
 
-                for i in 0 to nw-1 loop
-                    m_tx_data  <= wdat(i);
-                    m_tx_bits  <= std_logic_vector(to_unsigned(wlen(i), CNT_BITS));
-                    m_tx_valid <= '1';
-                    loop
-                        wait until rising_edge(clk);
-                        exit when m_tx_ready = '1';
-                    end loop;
-                    m_tx_valid <= '0';
+                m_tx_data  <= mtx;
+                m_tx_bits  <= std_logic_vector(to_unsigned(len, CNT_BITS));
+                m_tx_valid <= '1';
+                loop
+                    wait until rising_edge(clk);
+                    exit when m_tx_ready = '1';
                 end loop;
+                m_tx_valid <= '0';
                 frame := frame + 1;
-                word  := word + nw;
+                word  := word + 1;
 
                 loop
                     wait until rising_edge(clk);
@@ -591,6 +545,8 @@ begin
                     report "host: frame " & integer'image(f) & " slaves not ready for the reply" severity error;
                 resp := prev;
             else
+                assert prev_n /= 0
+                    report "host: frame " & integer'image(f) & " reply written before the empty frame was dropped" severity error;
                 rnd_bits(resp);
                 assert b_s_tx_ready = '1'
                     report "host: frame " & integer'image(f) & " slave B not ready for the reply" severity error;
@@ -617,20 +573,17 @@ begin
                 if f = 2 and i = 1 then
                     host_resp <= not resp;
                     host_wr   <= '1';
-                    cycles(1);
-                    host_wr   <= '0';
-                    cycles(SCK_DIV-1);
-                    assert a_s_tx_ready = '0' and b_s_tx_ready = '0'
-                        report "host: frame 2 chained word not taken" severity error;
-                else
-                    cycles(SCK_DIV);
                 end if;
+                cycles(SCK_DIV);
                 host_sclk <= '1';
                 hrx(HOST_MAX-1-i) := miso_in;
+                assert a_s_tx_ready = '0' and b_s_tx_ready = '0'
+                    report "host: frame " & integer'image(f) & " tx_ready high during the frame" severity error;
                 cycles(SCK_DIV);
                 host_sclk <= '0';
             end loop;
             cycles(SCK_DIV);
+            host_wr   <= '0';
             host_cs_n <= '1';
             host_mosi <= '0';
 
@@ -645,11 +598,7 @@ begin
             end loop;
             cycles(10);
 
-            if n = 0 then
-                ew := 1;
-            else
-                ew := (n + WIDTH - 1) / WIDTH;
-            end if;
+            ew := 1;
             if f = HOST_HOLD then
                 exp_rx := (others => '0');
                 for i in 0 to n-1 loop
@@ -664,7 +613,7 @@ begin
                     report "host: frame " & integer'image(f) & " overwrote an unread word" severity error;
                 host_rd <= '1';
                 cycles(3);
-                assert hw_n = hw0 + 1 and hw_data(hw0) = sv_rx and hw_bits(hw0) = sv_k and hw_last(hw0) = '1'
+                assert hw_n = hw0 + 1 and hw_data(hw0) = sv_rx and hw_bits(hw0) = sv_k
                     report "host: frame " & integer'image(f) & " held word not read back alone" severity error;
             else
                 assert hw_n = hw0 + ew
@@ -689,8 +638,6 @@ begin
                         assert hw_data(hw0+w) = exp_rx
                             report "host: frame " & integer'image(f) & " word " & integer'image(w) & " is " & hex(hw_data(hw0+w)) &
                                    ", expected " & hex(exp_rx) severity error;
-                        assert (hw_last(hw0+w) = '1') = (w = ew-1)
-                            report "host: frame " & integer'image(f) & " word " & integer'image(w) & " has the wrong last flag" severity error;
                     end if;
                 end loop;
             end if;
@@ -709,11 +656,11 @@ begin
         end loop;
         host_en <= '0';
 
-        assert n_b2b > 0 and n_multi > 0 and n_mshrt > 0 and n_mclip > 0
-            report "TB: coverage hole (back-to-back, multi-word, shorter or clipped master frame)" severity error;
+        assert n_b2b > 0 and n_mshrt > 0 and n_mclip > 0
+            report "TB: coverage hole (back-to-back, shorter or clipped master frame)" severity error;
         report "TB: PASS - " & integer'image(frame) & " master frames, " & integer'image(word) & " words of " &
-               integer'image(WIDTH) & " bits (" & integer'image(n_b2b) & " back-to-back, " & integer'image(n_multi) &
-               " multi-word, " & integer'image(n_mshrt) & " with a shorter last word, " & integer'image(n_mclip) &
+               integer'image(WIDTH) & " bits (" & integer'image(n_b2b) & " back-to-back, " &
+               integer'image(n_mshrt) & " shorter, " & integer'image(n_mclip) &
                " with tx_bits 0 or over WIDTH), " & integer'image(HOST_FRAMES) & " host frames (" &
                integer'image(n_empty) & " empty, " & integer'image(n_short) & " shorter, " &
                integer'image(n_exact) & " exact, " & integer'image(n_long) & " longer)"
@@ -726,7 +673,7 @@ begin
     -- Slave client: writes each reply once, checks each received word
     ------------------------------------------------------------------
 
-    s_fdone    <= s_rx_fcnt + 1 when s_rx_valid = '1' and s_rx_last = '1' else s_rx_fcnt;
+    s_fdone    <= s_rx_fcnt + 1 when s_rx_valid = '1' and plan_wlast(s_rx_wcnt) = '1' else s_rx_fcnt;
     s_tx_data  <= plan_sresp(s_tx_cnt);
     s_tx_valid <= '1' when host_en = '0' and s_tx_cnt < plan_wcnt and
                            (s_tx_cnt = 0 or plan_wlast(s_tx_cnt-1) = '0' or s_fdone > plan_wfrm(s_tx_cnt-1)) else '0';
@@ -752,9 +699,7 @@ begin
             assert s_rx_data = top_bits(plan_mtx(i), plan_wbits(i))
                 report "slave: word " & integer'image(i) & " is " & hex(s_rx_data) &
                        ", expected " & hex(top_bits(plan_mtx(i), plan_wbits(i))) severity error;
-            assert s_rx_last = plan_wlast(i)
-                report "slave: word " & integer'image(i) & " has the wrong last flag" severity error;
-            if s_rx_last = '1' then
+            if plan_wlast(i) = '1' then
                 s_rx_fcnt <= s_rx_fcnt + 1;
             end if;
             i := i + 1;
@@ -770,11 +715,10 @@ begin
     begin
         wait until rising_edge(clk);
         if host_en = '1' and host_rd = '1' and a_s_rx_valid = '1' then
-            assert b_s_rx_valid = '1' and b_s_rx_data = a_s_rx_data and b_s_rx_bits = a_s_rx_bits and b_s_rx_last = a_s_rx_last
+            assert b_s_rx_valid = '1' and b_s_rx_data = a_s_rx_data and b_s_rx_bits = a_s_rx_bits
                 report "host: the two slaves report different words" severity error;
             hw_data(hw_n) <= a_s_rx_data;
             hw_bits(hw_n) <= to_integer(unsigned(a_s_rx_bits));
-            hw_last(hw_n) <= a_s_rx_last;
             hw_n <= hw_n + 1;
         end if;
     end process host_rx_proc;
@@ -794,15 +738,13 @@ begin
             assert m_rx_data = top_bits(plan_sresp(j), plan_wbits(j))
                 report "master: word " & integer'image(j) & " is " & hex(m_rx_data) &
                        ", expected " & hex(top_bits(plan_sresp(j), plan_wbits(j))) severity error;
-            assert m_rx_last = plan_wlast(j)
-                report "master: word " & integer'image(j) & " has the wrong last flag" severity error;
-            if m_rx_last = '1' then
+            if plan_wlast(j) = '1' then
                 assert cs_n_in = '1' and hi = 1
-                    report "master: word " & integer'image(j) & " not flagged in the second cycle with CS# high" severity error;
+                    report "master: last word " & integer'image(j) & " not reported in the second cycle with CS# high" severity error;
                 m_rx_fcnt <= m_rx_fcnt + 1;
             else
                 assert cs_n_in = '0'
-                    report "master: word " & integer'image(j) & " flagged with CS# high but not last" severity error;
+                    report "master: word " & integer'image(j) & " reported with CS# high but not last" severity error;
             end if;
             j := j + 1;
             m_rx_wcnt <= j;
