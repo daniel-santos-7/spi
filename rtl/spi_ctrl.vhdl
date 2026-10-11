@@ -21,7 +21,6 @@ entity spi_ctrl is
         sclk_o     : out std_logic;
         cs_n_o     : out std_logic;
         tx_valid_i : in  std_logic;
-        tx_ready_o : out std_logic;
         tx_end_i   : in  std_logic;
         start_o    : out std_logic;
         stop_o     : out std_logic;
@@ -142,7 +141,6 @@ begin
 
     sclk_o     <= sclk;
     cs_n_o     <= cs_n;
-    tx_ready_o <= ready;
     start_o    <= s_start when dbg_i = '1' else m_start;
     stop_o     <= s_stop  when dbg_i = '1' else stop_reg;
     rise_o     <= s_rise  when dbg_i = '1' else m_rise;
