@@ -97,7 +97,7 @@ begin
                             ready_reg <= '1';
                         end if;
                     when M_IDLE =>
-                        if m_start = '1' then
+                        if tx_valid_i = '1' then
                             state_reg  <= M_SCK_LO;
                             cs_n_reg   <= '0';
                             cnt_en_reg <= '1';
