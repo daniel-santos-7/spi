@@ -17,8 +17,10 @@ entity spi_ctrl is
         rst_i      : in  std_logic;
         role_req_i : in  std_logic;  -- requested role (1 = master)
         role_ack_o : out std_logic;  -- role in effect (1 = master)
-        sclk_i     : in  std_logic;  -- sclk_i and cs_n_i must already be
-        cs_n_i     : in  std_logic;  -- synchronised to clk_i (spi_sync does it)
+        s_start_i  : in  std_logic;  -- slave strobes (spi_edge)
+        s_stop_i   : in  std_logic;
+        s_rise_i   : in  std_logic;
+        s_fall_i   : in  std_logic;
         cs_pin_i   : in  std_logic;  -- CS# pin as is, for miso_oe
         sclk_o     : out std_logic;
         sclk_oe    : out std_logic;
@@ -52,16 +54,9 @@ architecture rtl of spi_ctrl is
     signal cnt_en_reg   : std_logic;
     signal cnt_end      : std_logic;
 
-    signal sclk_dly_reg : std_logic;
-    signal cs_n_dly_reg : std_logic;
-
     signal m_start      : std_logic;
     signal m_rise       : std_logic;
     signal m_fall       : std_logic;
-    signal s_start      : std_logic;
-    signal s_stop       : std_logic;
-    signal s_rise       : std_logic;
-    signal s_fall       : std_logic;
 
 begin
 
@@ -83,7 +78,7 @@ begin
             else
                 case state_reg is
                     when S_IDLE =>
-                        if s_start = '1' then
+                        if s_start_i = '1' then
                             state_reg <= S_FRAME;
                             ready_reg <= '0';
                         elsif role_req_i = '1' then
@@ -91,7 +86,7 @@ begin
                             role_reg  <= '1';
                         end if;
                     when S_FRAME =>
-                        if s_stop = '1' then
+                        if s_stop_i = '1' then
                             state_reg <= S_IDLE;
                             ready_reg <= '1';
                         end if;
@@ -149,24 +144,6 @@ begin
     m_rise <= '1' when state_reg = M_SCK_LO and cnt_end = '1' else '0';
     m_fall <= '1' when state_reg = M_SCK_HI and cnt_end = '1' else '0';
 
-    edge_proc: process(clk_i)
-    begin
-        if rising_edge(clk_i) then
-            if rst_i = '1' then
-                sclk_dly_reg <= '0';
-                cs_n_dly_reg <= '1';
-            else
-                sclk_dly_reg <= sclk_i;
-                cs_n_dly_reg <= cs_n_i;
-            end if;
-        end if;
-    end process edge_proc;
-
-    s_start <= cs_n_dly_reg and not cs_n_i;
-    s_stop  <= cs_n_i and not cs_n_dly_reg;
-    s_rise  <= sclk_i and not sclk_dly_reg and not cs_n_i;
-    s_fall  <= sclk_dly_reg and not sclk_i and not cs_n_i;
-
     role_ack_o <= role_reg;
     sclk_o     <= sclk_reg;
     sclk_oe    <= role_reg;
@@ -175,10 +152,10 @@ begin
     mosi_oe    <= role_reg;
     miso_oe    <= not (cs_pin_i or role_reg);
     tx_ready_o <= ready_reg;
-    start_o    <= '1' when m_start = '1' or (s_start = '1' and state_reg = S_IDLE) else '0';
-    stop_o     <= '1' when stop_reg = '1' or (s_stop = '1' and state_reg = S_FRAME) else '0';
-    rise_o     <= '1' when m_rise = '1' or (s_rise = '1' and state_reg = S_FRAME) else '0';
-    fall_o     <= '1' when m_fall = '1' or (s_fall = '1' and state_reg = S_FRAME) else '0';
+    start_o    <= '1' when m_start = '1' or (s_start_i = '1' and state_reg = S_IDLE) else '0';
+    stop_o     <= '1' when stop_reg = '1' or (s_stop_i = '1' and state_reg = S_FRAME) else '0';
+    rise_o     <= '1' when m_rise = '1' or (s_rise_i = '1' and state_reg = S_FRAME) else '0';
+    fall_o     <= '1' when m_fall = '1' or (s_fall_i = '1' and state_reg = S_FRAME) else '0';
     load_o     <= load;
 
 end architecture rtl;

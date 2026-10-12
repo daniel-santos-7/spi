@@ -48,6 +48,11 @@ architecture rtl of spi_port is
     signal spi_port_sync_cs_n        : std_logic;
     signal spi_port_sync_mosi        : std_logic;
 
+    signal spi_port_edge_cs_n_fall   : std_logic;
+    signal spi_port_edge_cs_n_rise   : std_logic;
+    signal spi_port_edge_sclk_rise   : std_logic;
+    signal spi_port_edge_sclk_fall   : std_logic;
+
     signal spi_port_ctrl_role_ack    : std_logic;
     signal spi_port_ctrl_sclk        : std_logic;
     signal spi_port_ctrl_sclk_oe     : std_logic;
@@ -82,6 +87,17 @@ begin
         mosi_o => spi_port_sync_mosi
     );
 
+    spi_port_edge: entity work.spi_edge port map (
+        clk_i       => clk_i,
+        rst_i       => rst_i,
+        sclk_i      => spi_port_sync_sclk,
+        cs_n_i      => spi_port_sync_cs_n,
+        cs_n_fall_o => spi_port_edge_cs_n_fall,
+        cs_n_rise_o => spi_port_edge_cs_n_rise,
+        sclk_rise_o => spi_port_edge_sclk_rise,
+        sclk_fall_o => spi_port_edge_sclk_fall
+    );
+
     spi_port_ctrl: entity work.spi_ctrl generic map (
         SCK_DIV => SCK_DIV
     ) port map (
@@ -89,8 +105,10 @@ begin
         rst_i      => rst_i,
         role_req_i => role_req_i,
         role_ack_o => spi_port_ctrl_role_ack,
-        sclk_i     => spi_port_sync_sclk,
-        cs_n_i     => spi_port_sync_cs_n,
+        s_start_i  => spi_port_edge_cs_n_fall,
+        s_stop_i   => spi_port_edge_cs_n_rise,
+        s_rise_i   => spi_port_edge_sclk_rise,
+        s_fall_i   => spi_port_edge_sclk_fall,
         cs_pin_i   => cs_n_i,
         sclk_o     => spi_port_ctrl_sclk,
         sclk_oe    => spi_port_ctrl_sclk_oe,
