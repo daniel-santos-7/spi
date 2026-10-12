@@ -16,7 +16,7 @@ entity spi_rx_buf is
     port (
         clk_i   : in  std_logic;
         rst_i   : in  std_logic;
-        valid_i : in  std_logic;  -- word offered (frame end), no ready back
+        load_i  : in  std_logic;  -- word offered (frame end), no ready back
         data_i  : in  std_logic_vector(WIDTH-1 downto 0);
         bits_i  : in  std_logic_vector(CNT_BITS-1 downto 0);
         ready_i : in  std_logic;
@@ -42,7 +42,7 @@ begin
                 data_reg  <= (others => '0');
                 bits_reg  <= (others => '0');
             elsif valid_reg = '0' or ready_i = '1' then
-                valid_reg <= valid_i;
+                valid_reg <= load_i;
                 data_reg  <= data_i;
                 bits_reg  <= bits_i;
             end if;

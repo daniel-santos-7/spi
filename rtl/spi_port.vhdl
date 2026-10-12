@@ -62,7 +62,6 @@ architecture rtl of spi_port is
     signal spi_port_ctrl_mosi_oe     : std_logic;
     signal spi_port_ctrl_miso_oe     : std_logic;
     signal spi_port_ctrl_tx_ready    : std_logic;
-    signal spi_port_ctrl_rx_valid    : std_logic;
     signal spi_port_ctrl_start       : std_logic;
     signal spi_port_ctrl_stop        : std_logic;
     signal spi_port_ctrl_sample      : std_logic;
@@ -72,6 +71,7 @@ architecture rtl of spi_port is
     signal spi_port_datapath_mosi    : std_logic;
     signal spi_port_datapath_miso    : std_logic;
     signal spi_port_datapath_done    : std_logic;
+    signal spi_port_datapath_load    : std_logic;
     signal spi_port_datapath_data    : std_logic_vector(WIDTH-1 downto 0);
     signal spi_port_datapath_bits    : std_logic_vector(CNT_BITS-1 downto 0);
 
@@ -125,7 +125,6 @@ begin
         mosi_oe     => spi_port_ctrl_mosi_oe,
         miso_oe     => spi_port_ctrl_miso_oe,
         tx_ready_o  => spi_port_ctrl_tx_ready,
-        rx_valid_o  => spi_port_ctrl_rx_valid,
         start_o     => spi_port_ctrl_start,
         stop_o      => spi_port_ctrl_stop,
         sample_o    => spi_port_ctrl_sample,
@@ -152,6 +151,7 @@ begin
         mosi_o     => spi_port_datapath_mosi,
         miso_o     => spi_port_datapath_miso,
         done_o     => spi_port_datapath_done,
+        load_o     => spi_port_datapath_load,
         data_o     => spi_port_datapath_data,
         bits_o     => spi_port_datapath_bits
     );
@@ -162,7 +162,7 @@ begin
     ) port map (
         clk_i    => clk_i,
         rst_i    => rst_i,
-        valid_i  => spi_port_ctrl_rx_valid,
+        load_i   => spi_port_datapath_load,
         data_i   => spi_port_datapath_data,
         bits_i   => spi_port_datapath_bits,
         ready_i  => rx_ready_i,

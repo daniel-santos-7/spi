@@ -34,8 +34,9 @@ entity spi_datapath is
         mosi_o     : out std_logic;
         miso_o     : out std_logic;
         done_o     : out std_logic;
-        data_o     : out std_logic_vector(WIDTH-1 downto 0);  -- word and count so far,
-        bits_o     : out std_logic_vector(CNT_BITS-1 downto 0)  -- final at stop_i
+        load_o     : out std_logic;  -- word received (stop_i), to the receive buffer
+        data_o     : out std_logic_vector(WIDTH-1 downto 0);
+        bits_o     : out std_logic_vector(CNT_BITS-1 downto 0)
     );
 end entity spi_datapath;
 
@@ -90,6 +91,7 @@ begin
     mosi_o     <= dout;
     miso_o     <= dout;
     done_o     <= done;
+    load_o     <= stop_i;
     data_o     <= rx_sh_reg;
     bits_o     <= std_logic_vector(bit_cnt_reg);
 
