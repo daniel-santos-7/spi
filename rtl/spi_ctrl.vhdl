@@ -173,7 +173,7 @@ begin
     cs_n_o     <= cs_n_reg;
     cs_n_oe    <= role_reg;
     mosi_oe    <= role_reg;
-    miso_oe    <= not cs_pin_i and not role_reg;
+    miso_oe    <= not (cs_pin_i or role_reg);
     tx_ready_o <= ready_reg;
     start_o    <= '1' when m_start = '1' or (s_start = '1' and state_reg = S_IDLE) else '0';
     stop_o     <= '1' when stop_reg = '1' or (s_stop = '1' and state_reg = S_FRAME) else '0';
