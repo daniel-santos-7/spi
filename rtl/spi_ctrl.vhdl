@@ -16,8 +16,7 @@ entity spi_ctrl is
         clk_i      : in  std_logic;
         rst_i      : in  std_logic;
         role_req_i : in  std_logic;  -- requested role (1 = master)
-        role_ack_o : out std_logic;  -- role in effect (1 = master), to the pin
-        role_o     : out std_logic;  -- the same, to the datapath
+        role_ack_o : out std_logic;  -- role in effect (1 = master)
         sclk_i     : in  std_logic;  -- sclk_i and cs_n_i must already be
         cs_n_i     : in  std_logic;  -- synchronised to clk_i (spi_sync does it)
         cs_pin_i   : in  std_logic;  -- CS# pin as is, for miso_oe
@@ -169,7 +168,6 @@ begin
     s_fall  <= sclk_dly_reg and not sclk_i and not cs_n_i;
 
     role_ack_o <= role_reg;
-    role_o     <= role_reg;
     sclk_o     <= sclk_reg;
     sclk_oe    <= role_reg;
     cs_n_o     <= cs_n_reg;

@@ -48,7 +48,6 @@ architecture rtl of spi_port is
     signal spi_port_sync_cs_n        : std_logic;
     signal spi_port_sync_mosi        : std_logic;
 
-    signal spi_port_ctrl_role        : std_logic;
     signal spi_port_ctrl_role_ack    : std_logic;
     signal spi_port_ctrl_sclk        : std_logic;
     signal spi_port_ctrl_sclk_oe     : std_logic;
@@ -90,7 +89,6 @@ begin
         rst_i      => rst_i,
         role_req_i => role_req_i,
         role_ack_o => spi_port_ctrl_role_ack,
-        role_o     => spi_port_ctrl_role,
         sclk_i     => spi_port_sync_sclk,
         cs_n_i     => spi_port_sync_cs_n,
         cs_pin_i   => cs_n_i,
@@ -121,7 +119,7 @@ begin
         rise_i     => spi_port_ctrl_rise,
         fall_i     => spi_port_ctrl_fall,
         load_i     => spi_port_ctrl_load,
-        role_i     => spi_port_ctrl_role,
+        role_i     => spi_port_ctrl_role_ack,
         miso_i     => miso_i,
         mosi_i     => spi_port_sync_mosi,
         mosi_o     => spi_port_datapath_mosi,
