@@ -49,6 +49,7 @@ architecture rtl of spi_datapath is
     signal tx_sh_reg    : std_logic_vector(WIDTH-1 downto 0);
     signal rx_sh_reg    : std_logic_vector(WIDTH-1 downto 0);
     signal din          : std_logic;
+    signal dout         : std_logic;
 
     signal rx_valid_reg : std_logic;
     signal rx_data_reg  : std_logic_vector(WIDTH-1 downto 0);
@@ -59,7 +60,8 @@ begin
     assert WIDTH >= 2 report "SPI datapath: WIDTH must be at least 2." severity failure;
     assert 2**CNT_BITS > WIDTH report "SPI datapath: CNT_BITS too small to count WIDTH." severity failure;
 
-    din <= miso_i when role_i = '1' else mosi_i;
+    din  <= miso_i when role_i = '1' else mosi_i;
+    dout <= tx_sh_reg(WIDTH-1);
 
     cnt_proc: process(clk_i)
     begin
@@ -126,8 +128,8 @@ begin
         end if;
     end process rx_buf_proc;
 
-    mosi_o     <= tx_sh_reg(WIDTH-1);
-    miso_o     <= tx_sh_reg(WIDTH-1);
+    mosi_o     <= dout;
+    miso_o     <= dout;
     done_o     <= '1' when bit_cnt_reg = wlen_reg or bit_cnt_reg = WIDTH else '0';
     rx_valid_o <= rx_valid_reg;
     rx_data_o  <= rx_data_reg;
