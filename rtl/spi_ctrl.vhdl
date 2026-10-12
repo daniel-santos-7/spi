@@ -68,7 +68,7 @@ begin
 
     cnt_end <= '1' when cnt_reg = SCK_DIV-1 else '0';
     load    <= tx_valid_i and ready_reg;
-    m_start <= load and not role_reg;
+    m_start <= load;
 
     fsm_proc: process(clk_i)
     begin
