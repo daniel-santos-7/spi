@@ -75,15 +75,15 @@ The registers that hold and move the data, driven by the control's one-cycle str
 - `start_i` (`CS#` falls): clears the receive register and the count.
 - `sample_i` (SCK rises, in mode 0): shifts `din` (the selected input pin) into the receive register and counts the bit, until the count reaches `WIDTH`; later bits are ignored.
 - `shift_i` (SCK falls, in mode 0): shifts the transmit register, with zeros shifted in, so its MSB, on `mosi_o` and `miso_o`, shows the next bit, and zeros after the `WIDTH`-th.
-- `stop_i` (`CS#` rises): ends the frame (in the same cycle the control's `rx_valid_o` tells `spi_rx_buf` to take the word and count on `rx_data_o`/`rx_bits_o`), and clears the transmit register if the frame had at least one bit (the count only returns to 0 at `start_i`), so an underrun after a shorter frame sends zeros, not what that frame left. `wlen_reg` is cleared with it (it shares the process); harmless, since every master frame loads it again. After an empty frame the word written before it stays for the next one.
-- `load_i` (a client write): copies `tx_data_i` into the transmit register and `tx_bits_i` into `wlen_reg`.
+- `stop_i` (`CS#` rises): ends the frame (in the same cycle the control's `rx_valid_o` tells `spi_rx_buf` to take the word and count on `data_o`/`bits_o`), and clears the transmit register if the frame had at least one bit (the count only returns to 0 at `start_i`), so an underrun after a shorter frame sends zeros, not what that frame left. `wlen_reg` is cleared with it (it shares the process); harmless, since every master frame loads it again. After an empty frame the word written before it stays for the next one.
+- `load_i` (a client write): copies `data_i` (the client's `tx_data_i`) into the transmit register and `bits_i` (`tx_bits_i`) into `wlen_reg`.
 - `done_o`: the count has reached `wlen_reg` or `WIDTH`, so a length of 0 or above `WIDTH` gives `WIDTH` bits. Only the master control uses it, to end its frame.
 
-`rx_data_o` and `rx_bits_o` show the receive register and the count as they build up; they are final when `stop_i` comes.
+`data_o` and `bits_o` show the receive register and the count as they build up; they are final when `stop_i` comes.
 
 ## spi_rx_buf
 
-Holds one received word `{data, bits}`, with a ready/valid handshake on the output (`valid_o`, `ready_i`, `data_o`, `bits_o`, which `spi_port` gives out as `rx_*`). Its input is the datapath's `rx_data_o`/`rx_bits_o`, offered by the control's `rx_valid_o` on `valid_i` (today the same pulse as `stop`). While it is empty (`valid_reg` low), it copies the input on every cycle and `valid_reg` takes `valid_i`, so it keeps the word offered in the cycle it fills. While it is full, nothing changes until the client's `ready_i`, and then the same copy happens once, so a word offered in that cycle is kept and `valid_reg` falls otherwise. There is no ready towards the datapath: the link cannot be held back, so a word that arrives while the buffer is full and `ready_i` is low is dropped. The outputs follow the input while `valid_o` is low and mean nothing then.
+Holds one received word `{data, bits}`, with a ready/valid handshake on the output (`valid_o`, `ready_i`, `data_o`, `bits_o`, which `spi_port` gives out as `rx_*`). Its input is the datapath's `data_o`/`bits_o`, offered by the control's `rx_valid_o` on `valid_i` (today the same pulse as `stop`). While it is empty (`valid_reg` low), it copies the input on every cycle and `valid_reg` takes `valid_i`, so it keeps the word offered in the cycle it fills. While it is full, nothing changes until the client's `ready_i`, and then the same copy happens once, so a word offered in that cycle is kept and `valid_reg` falls otherwise. There is no ready towards the datapath: the link cannot be held back, so a word that arrives while the buffer is full and `ready_i` is low is dropped. The outputs follow the input while `valid_o` is low and mean nothing then.
 
 ## spi_edge
 

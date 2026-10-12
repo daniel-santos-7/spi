@@ -28,14 +28,14 @@ entity spi_datapath is
         miso_i     : in  std_logic;
         mosi_i     : in  std_logic;  -- synchronised to clk_i (spi_sync does it)
 
-        tx_data_i  : in  std_logic_vector(WIDTH-1 downto 0);
-        tx_bits_i  : in  std_logic_vector(CNT_BITS-1 downto 0);
+        data_i     : in  std_logic_vector(WIDTH-1 downto 0);
+        bits_i     : in  std_logic_vector(CNT_BITS-1 downto 0);
 
         mosi_o     : out std_logic;
         miso_o     : out std_logic;
         done_o     : out std_logic;
-        rx_data_o  : out std_logic_vector(WIDTH-1 downto 0);  -- word and count so far,
-        rx_bits_o  : out std_logic_vector(CNT_BITS-1 downto 0)  -- final at stop_i
+        data_o     : out std_logic_vector(WIDTH-1 downto 0);  -- word and count so far,
+        bits_o     : out std_logic_vector(CNT_BITS-1 downto 0)  -- final at stop_i
     );
 end entity spi_datapath;
 
@@ -66,8 +66,8 @@ begin
                 tx_sh_reg <= (others => '0');
                 wlen_reg  <= (others => '0');
             elsif load_i = '1' then
-                tx_sh_reg <= tx_data_i;
-                wlen_reg  <= unsigned(tx_bits_i);
+                tx_sh_reg <= data_i;
+                wlen_reg  <= unsigned(bits_i);
             elsif shift_i = '1' then
                 tx_sh_reg <= tx_sh_reg(WIDTH-2 downto 0) & '0';
             end if;
@@ -90,7 +90,7 @@ begin
     mosi_o     <= dout;
     miso_o     <= dout;
     done_o     <= done;
-    rx_data_o  <= rx_sh_reg;
-    rx_bits_o  <= std_logic_vector(bit_cnt_reg);
+    data_o     <= rx_sh_reg;
+    bits_o     <= std_logic_vector(bit_cnt_reg);
 
 end architecture rtl;
