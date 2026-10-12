@@ -8,6 +8,9 @@
 -- Two spi_port instances, A and B, share one set of pads modelled as
 -- resolved signals with pull resistors (CS# up, SCK/MOSI/MISO down).
 -- Phase 0 straps A as master and B as slave; phase 1 swaps the roles.
+-- In one full phase 0 frame both straps flip in the middle of the
+-- frame and flip back before it ends: neither port may change role, so
+-- the frame and every check around it must be unaffected.
 -- Every frame is one word of random data from the master, answered by
 -- a random reply word from the slave, with a random tx_bits: mostly 1
 -- to WIDTH bits, sometimes 0 or more than WIDTH, which must give WIDTH
@@ -60,6 +63,7 @@ architecture sim of tb_spi_port is
 
     constant CLK_PERIOD : time    := 10 ns;
     constant CS_MIN     : integer := 2;
+    constant GLITCH_F   : integer := 3;
     constant B2B_HI     : integer := 4;
     constant FRAME_CYC  : integer := 2 * WIDTH * SCK_DIV;
     constant HOST_MAX   : integer := 2 * WIDTH + 8;
@@ -426,6 +430,9 @@ begin
                 else
                     rnd(1, WIDTH, len);
                 end if;
+                if ph = 0 and f = GLITCH_F then
+                    len := WIDTH;
+                end if;
                 if len = 0 or len > WIDTH then
                     k       := WIDTH;
                     n_mclip := n_mclip + 1;
@@ -454,6 +461,16 @@ begin
                     exit when m_tx_ready = '1';
                 end loop;
                 m_tx_valid <= '0';
+                if ph = 0 and f = GLITCH_F then
+                    -- flip both straps in the middle of a full frame and back
+                    -- before it ends: the roles must not change at all
+                    cycles(4 * SCK_DIV);
+                    strap_a <= '1';
+                    strap_b <= '0';
+                    cycles(4 * SCK_DIV);
+                    strap_a <= '0';
+                    strap_b <= '1';
+                end if;
                 frame := frame + 1;
                 word  := word + 1;
 
@@ -816,13 +833,13 @@ begin
                 end if;
             end if;
 
-            -- the master inside a slave-strapped port stays idle
+            -- the master inside a port in the slave role stays idle
             if chk_on = '1' then
-                if strap_a = '1' then
+                if a_dbg_o = '1' then
                     assert a_cs_n_o = '1' and a_sclk_o = '0'
                         report "bus: master inside the slave-strapped port A runs a frame" severity error;
                 end if;
-                if strap_b = '1' then
+                if b_dbg_o = '1' then
                     assert b_cs_n_o = '1' and b_sclk_o = '0'
                         report "bus: master inside the slave-strapped port B runs a frame" severity error;
                 end if;

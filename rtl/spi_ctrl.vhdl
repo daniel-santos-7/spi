@@ -15,8 +15,9 @@ entity spi_ctrl is
     port (
         clk_i      : in  std_logic;
         rst_i      : in  std_logic;
-        dbg_i      : in  std_logic;
-        dbg_o      : out std_logic;
+        dbg_i      : in  std_logic;  -- requested role, synchronised
+        dbg_o      : out std_logic;  -- role in effect, changed only in IDLE
+        role_o     : out std_logic;
         sclk_i     : in  std_logic;  -- sclk_i and cs_n_i must already be
         cs_n_i     : in  std_logic;  -- synchronised to clk_i (spi_sync does it)
         cs_pin_i   : in  std_logic;  -- CS# pin as is, for miso_oe
@@ -47,6 +48,7 @@ architecture rtl of spi_ctrl is
     signal cs_n_reg     : std_logic;
     signal stop_reg     : std_logic;
     signal ready_reg    : std_logic;
+    signal role_reg     : std_logic;
     signal load         : std_logic;
     signal cnt_en_reg   : std_logic;
     signal cnt_end      : std_logic;
@@ -66,7 +68,7 @@ begin
 
     cnt_end <= '1' when cnt_reg = SCK_DIV-1 else '0';
     load    <= tx_valid_i and ready_reg;
-    m_start <= load and not dbg_i;
+    m_start <= load and not role_reg;
 
     fsm_proc: process(clk_i)
     begin
@@ -78,6 +80,7 @@ begin
                 cnt_en_reg <= '0';
                 stop_reg   <= '0';
                 ready_reg  <= '1';
+                role_reg   <= '0';
             else
                 case state_reg is
                     when IDLE =>
@@ -86,9 +89,11 @@ begin
                             cs_n_reg   <= '0';
                             cnt_en_reg <= '1';
                             ready_reg  <= '0';
-                        elsif dbg_i = '1' and s_start = '1' then
+                        elsif role_reg = '1' and s_start = '1' then
                             state_reg <= SLAVE;
                             ready_reg <= '0';
+                        else
+                            role_reg <= dbg_i;
                         end if;
                     when SCK_LO =>
                         if cnt_end = '1' then
@@ -157,18 +162,19 @@ begin
     s_rise  <= sclk_i and not sclk_dly_reg and not cs_n_i;
     s_fall  <= sclk_dly_reg and not sclk_i and not cs_n_i;
 
-    dbg_o      <= dbg_i;
+    dbg_o      <= role_reg;
+    role_o     <= role_reg;
     sclk_o     <= sclk_reg;
-    sclk_oe    <= not dbg_i;
+    sclk_oe    <= not role_reg;
     cs_n_o     <= cs_n_reg;
-    cs_n_oe    <= not dbg_i;
-    mosi_oe    <= not dbg_i;
-    miso_oe    <= dbg_i and not cs_pin_i;
+    cs_n_oe    <= not role_reg;
+    mosi_oe    <= not role_reg;
+    miso_oe    <= role_reg and not cs_pin_i;
     tx_ready_o <= ready_reg;
-    start_o    <= s_start when dbg_i = '1' else m_start;
-    stop_o     <= s_stop  when dbg_i = '1' else stop_reg;
-    rise_o     <= s_rise  when dbg_i = '1' else m_rise;
-    fall_o     <= s_fall  when dbg_i = '1' else m_fall;
+    start_o    <= s_start when role_reg = '1' else m_start;
+    stop_o     <= s_stop  when role_reg = '1' else stop_reg;
+    rise_o     <= s_rise  when role_reg = '1' else m_rise;
+    fall_o     <= s_fall  when role_reg = '1' else m_fall;
     load_o     <= load;
 
 end architecture rtl;
