@@ -7,10 +7,12 @@
 --
 -- Two spi_port instances, A and B, share one set of pads modelled as
 -- resolved signals with pull resistors (CS# up, SCK/MOSI/MISO down).
+-- Every port is a slave; dbg_i = 1 only lets a write start a master
+-- frame, and SCK/CS#/MOSI are driven only during that frame.
 -- Phase 0 straps A as master and B as slave; phase 1 swaps the roles.
 -- In one full phase 0 frame both straps flip in the middle of the
--- frame and flip back before it ends: neither port may change role, so
--- the frame and every check around it must be unaffected.
+-- frame and flip back before it ends: the frame and every check around
+-- it must be unaffected.
 -- Every frame is one word of random data from the master, answered by
 -- a random reply word from the slave, with a random tx_bits: mostly 1
 -- to WIDTH bits, sometimes 0 or more than WIDTH, which must give WIDTH
@@ -38,8 +40,9 @@
 -- Checks: every word and bit count the slave reports, the
 -- words the master receives (the first tx_bits bits of the reply),
 -- CS# high time, SCK phases, MOSI/MISO changing only while SCK is low,
--- frame length, pad contention, pin release, that a slave port ignores
--- tx_bits (driven all ones) and that its master stays idle.
+-- frame length, pad contention, that SCK/CS#/MOSI are driven only by
+-- the master and only during its frames, that a slave port ignores
+-- tx_bits (driven all ones) and never drives them.
 --
 ----------------------------------------------------------------------
 
@@ -113,8 +116,8 @@ architecture sim of tb_spi_port is
     signal chk_on    : std_logic := '0';
     signal iso_check : std_logic := '0';
     signal swap      : std_logic := '0';
-    signal strap_a   : std_logic := '0';
-    signal strap_b   : std_logic := '1';
+    signal strap_a   : std_logic := '1';
+    signal strap_b   : std_logic := '0';
 
     -- software host (phase 2)
     signal host_en   : std_logic := '0';
@@ -139,7 +142,6 @@ architecture sim of tb_spi_port is
     signal miso_in  : std_logic;
 
     -- port A
-    signal a_dbg_o      : std_logic;
     signal a_sclk_o     : std_logic;
     signal a_sclk_oe    : std_logic;
     signal a_cs_n_o     : std_logic;
@@ -158,7 +160,6 @@ architecture sim of tb_spi_port is
     signal a_rx_valid   : std_logic;
 
     -- port B
-    signal b_dbg_o      : std_logic;
     signal b_sclk_o     : std_logic;
     signal b_sclk_oe    : std_logic;
     signal b_cs_n_o     : std_logic;
@@ -226,7 +227,6 @@ begin
         clk_i      => clk,
         rst_i      => rst,
         dbg_i      => strap_a,
-        dbg_o      => a_dbg_o,
         sclk_i     => sclk_in,
         sclk_o     => a_sclk_o,
         sclk_oe    => a_sclk_oe,
@@ -257,7 +257,6 @@ begin
         clk_i      => clk,
         rst_i      => rst,
         dbg_i      => strap_b,
-        dbg_o      => b_dbg_o,
         sclk_i     => sclk_in,
         sclk_o     => b_sclk_o,
         sclk_oe    => b_sclk_oe,
@@ -402,15 +401,13 @@ begin
                 -- strap A as slave too, check that nobody drives the bus,
                 -- then strap B as master
                 iso_check <= '0';
-                strap_a   <= '1';
+                strap_a   <= '0';
                 cycles(10);
                 assert sclk_pad = 'L' and cs_n_pad = 'H' and mosi_pad = 'L' and miso_pad = 'L'
                     report "TB: pins still driven with both ports strapped as slave" severity error;
-                assert a_dbg_o = '1' and b_dbg_o = '1'
-                    report "TB: dbg_o does not follow the strap" severity error;
                 swap <= '1';
                 cycles(1);
-                strap_b <= '0';
+                strap_b <= '1';
                 cycles(10);
                 iso_check <= '1';
                 report "TB: roles swapped, A is slave and B is master" severity note;
@@ -463,13 +460,13 @@ begin
                 m_tx_valid <= '0';
                 if ph = 0 and f = GLITCH_F then
                     -- flip both straps in the middle of a full frame and back
-                    -- before it ends: the roles must not change at all
-                    cycles(4 * SCK_DIV);
-                    strap_a <= '1';
-                    strap_b <= '0';
+                    -- before it ends: the frame must not change at all
                     cycles(4 * SCK_DIV);
                     strap_a <= '0';
                     strap_b <= '1';
+                    cycles(4 * SCK_DIV);
+                    strap_a <= '1';
+                    strap_b <= '0';
                 end if;
                 frame := frame + 1;
                 word  := word + 1;
@@ -497,7 +494,7 @@ begin
 
         -- phase 2: both ports slaves, frames of any length from the host
         iso_check <= '0';
-        strap_b   <= '1';
+        strap_b   <= '0';
         cycles(10);
         host_rd <= '1';
         host_en <= '1';
@@ -744,6 +741,7 @@ begin
         variable lo_cnt : natural := 0;
         variable hi_cnt : natural := CS_MIN;
         variable frame  : natural := 0;
+        variable cs_drv : std_logic := '0';
     begin
         wait until rising_edge(clk) and chk_on = '1';
         sclk_p := sclk_in;
@@ -815,34 +813,32 @@ begin
                     report "bus: MISO changed while SCK is high" severity error;
             end if;
 
-            -- pins driven by the right port
+            -- SCK, CS# and MOSI are driven together, only during a master
+            -- frame (CS# driven high for its last cycle only); MISO by the
+            -- slave while CS# is low
+            assert a_sclk_oe = a_cs_n_oe and a_mosi_oe = a_cs_n_oe and
+                   b_sclk_oe = b_cs_n_oe and b_mosi_oe = b_cs_n_oe
+                report "bus: SCK, CS# and MOSI enables differ" severity error;
+            assert not (a_cs_n_oe = '1' and a_cs_n_o = '1' and cs_drv = '1') and
+                   not (b_cs_n_oe = '1' and b_cs_n_o = '1' and cs_drv = '1')
+                report "bus: CS# driven high for more than one cycle" severity error;
             if iso_check = '1' then
-                assert (sclk_pad = '0' or sclk_pad = '1') and (cs_n_pad = '0' or cs_n_pad = '1') and
-                       (mosi_pad = '0' or mosi_pad = '1')
-                    report "bus: master pins not driven" severity error;
                 if cs_n_in = '0' then
                     assert miso_pad = '0' or miso_pad = '1'
                         report "bus: MISO not driven by the slave while CS# is low" severity error;
                 end if;
                 if swap = '0' then
-                    assert a_dbg_o = '0' and b_dbg_o = '1'
-                        report "bus: dbg_o does not follow the strap" severity error;
+                    assert b_cs_n_oe = '0' and a_miso_oe = '0'
+                        report "bus: slave port B drives master pins or master port A drives MISO" severity error;
                 else
-                    assert a_dbg_o = '1' and b_dbg_o = '0'
-                        report "bus: dbg_o does not follow the strap" severity error;
+                    assert a_cs_n_oe = '0' and b_miso_oe = '0'
+                        report "bus: slave port A drives master pins or master port B drives MISO" severity error;
                 end if;
             end if;
-
-            -- the master inside a port in the slave role stays idle
-            if chk_on = '1' then
-                if a_dbg_o = '1' then
-                    assert a_cs_n_o = '1' and a_sclk_o = '0'
-                        report "bus: master inside the slave-strapped port A runs a frame" severity error;
-                end if;
-                if b_dbg_o = '1' then
-                    assert b_cs_n_o = '1' and b_sclk_o = '0'
-                        report "bus: master inside the slave-strapped port B runs a frame" severity error;
-                end if;
+            if (a_cs_n_oe = '1' and a_cs_n_o = '1') or (b_cs_n_oe = '1' and b_cs_n_o = '1') then
+                cs_drv := '1';
+            else
+                cs_drv := '0';
             end if;
 
             sclk_p := sclk_in;

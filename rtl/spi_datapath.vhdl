@@ -24,7 +24,7 @@ entity spi_datapath is
         fall_i     : in  std_logic;
         load_i     : in  std_logic;
 
-        role_i     : in  std_logic;
+        drv_i      : in  std_logic;  -- master frame: sample miso_i
         miso_i     : in  std_logic;
         mosi_i     : in  std_logic;  -- synchronised to clk_i (spi_sync does it)
         mosi_o     : out std_logic;
@@ -59,7 +59,7 @@ begin
     assert WIDTH >= 2 report "SPI datapath: WIDTH must be at least 2." severity failure;
     assert 2**CNT_BITS > WIDTH report "SPI datapath: CNT_BITS too small to count WIDTH." severity failure;
 
-    din <= mosi_i when role_i = '1' else miso_i;
+    din <= miso_i when drv_i = '1' else mosi_i;
 
     cnt_proc: process(clk_i)
     begin

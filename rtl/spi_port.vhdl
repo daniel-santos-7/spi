@@ -18,7 +18,6 @@ entity spi_port is
         clk_i      : in  std_logic;
         rst_i      : in  std_logic;
         dbg_i      : in  std_logic;
-        dbg_o      : out std_logic;
         sclk_i     : in  std_logic;
         sclk_o     : out std_logic;
         sclk_oe    : out std_logic;
@@ -45,7 +44,7 @@ end entity spi_port;
 architecture rtl of spi_port is
 
     signal dbg      : std_logic;
-    signal role     : std_logic;
+    signal drv      : std_logic;
     signal s_sclk   : std_logic;
     signal s_cs_n   : std_logic;
     signal s_mosi   : std_logic;
@@ -78,8 +77,7 @@ begin
         clk_i      => clk_i,
         rst_i      => rst_i,
         dbg_i      => dbg,
-        dbg_o      => dbg_o,
-        role_o     => role,
+        drv_o      => drv,
         sclk_i     => s_sclk,
         cs_n_i     => s_cs_n,
         cs_pin_i   => cs_n_i,
@@ -110,7 +108,7 @@ begin
         rise_i     => sh_rise,
         fall_i     => sh_fall,
         load_i     => sh_load,
-        role_i     => role,
+        drv_i      => drv,
         miso_i     => miso_i,
         mosi_i     => s_mosi,
         mosi_o     => mosi_o,
