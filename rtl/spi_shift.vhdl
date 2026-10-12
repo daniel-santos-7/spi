@@ -42,7 +42,6 @@ architecture rtl of spi_shift is
     signal ready_reg : std_logic;
 
     signal tx_sh     : std_logic_vector(WIDTH-1 downto 0);
-    signal tx_push   : std_logic;
 
     signal rx_sh     : std_logic_vector(WIDTH-1 downto 0);
 
@@ -50,8 +49,6 @@ begin
 
     assert WIDTH >= 2 report "SPI shift: WIDTH must be at least 2." severity failure;
     assert 2**CNT_BITS > WIDTH report "SPI shift: CNT_BITS too small to count WIDTH." severity failure;
-
-    tx_push <= tx_valid_i and ready_reg;
 
     ready_proc: process(clk_i)
     begin
@@ -84,7 +81,7 @@ begin
         if rising_edge(clk_i) then
             if rst_i = '1' or (stop_i = '1' and bit_cnt /= 0) then
                 tx_sh <= (others => '0');
-            elsif tx_push = '1' then
+            elsif tx_valid_i = '1' and ready_reg = '1' then
                 tx_sh <= tx_data_i;
             elsif fall_i = '1' then
                 tx_sh <= tx_sh(WIDTH-2 downto 0) & '0';
