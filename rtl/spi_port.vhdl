@@ -54,15 +54,10 @@ architecture rtl of spi_port is
     signal sh_stop  : std_logic;
     signal sh_rise  : std_logic;
     signal sh_fall  : std_logic;
+    signal sh_load  : std_logic;
+    signal sh_done  : std_logic;
     signal sh_din   : std_logic;
     signal sh_dout  : std_logic;
-    signal sh_rx    : std_logic_vector(WIDTH-1 downto 0);
-    signal sh_bits  : std_logic_vector(CNT_BITS-1 downto 0);
-    signal sh_put   : std_logic;
-
-    signal rx_valid : std_logic;
-    signal rx_data  : std_logic_vector(WIDTH-1 downto 0);
-    signal rx_bits  : std_logic_vector(CNT_BITS-1 downto 0);
 
 begin
 
@@ -82,9 +77,7 @@ begin
     s_cs_n <= cs_n_i or not dbg;
 
     spi_port_ctrl: entity work.spi_ctrl generic map (
-        SCK_DIV  => SCK_DIV,
-        WIDTH    => WIDTH,
-        CNT_BITS => CNT_BITS
+        SCK_DIV => SCK_DIV
     ) port map (
         clk_i      => clk_i,
         rst_i      => rst_i,
@@ -94,16 +87,18 @@ begin
         sclk_o     => sclk_o,
         cs_n_o     => cs_n_o,
         tx_valid_i => tx_valid_i,
-        tx_bits_i  => tx_bits_i,
+        tx_ready_o => tx_ready_o,
+        done_i     => sh_done,
         start_o    => sh_start,
         stop_o     => sh_stop,
         rise_o     => sh_rise,
-        fall_o     => sh_fall
+        fall_o     => sh_fall,
+        load_o     => sh_load
     );
 
     sh_din <= s_mosi when dbg = '1' else miso_i;
 
-    spi_port_shift: entity work.spi_shift generic map (
+    spi_port_datapath: entity work.spi_datapath generic map (
         WIDTH    => WIDTH,
         CNT_BITS => CNT_BITS
     ) port map (
@@ -113,36 +108,20 @@ begin
         stop_i     => sh_stop,
         rise_i     => sh_rise,
         fall_i     => sh_fall,
+        load_i     => sh_load,
         din_i      => sh_din,
         dout_o     => sh_dout,
-        tx_valid_i => tx_valid_i,
         tx_data_i  => tx_data_i,
-        tx_ready_o => tx_ready_o,
-        rx_data_o  => sh_rx,
-        rx_bits_o  => sh_bits,
-        rx_valid_o => sh_put
+        tx_bits_i  => tx_bits_i,
+        done_o     => sh_done,
+        rx_ready_i => rx_ready_i,
+        rx_valid_o => rx_valid_o,
+        rx_data_o  => rx_data_o,
+        rx_bits_o  => rx_bits_o
     );
 
-    rx_buf_proc: process(clk_i)
-    begin
-        if rising_edge(clk_i) then
-            if rst_i = '1' then
-                rx_valid <= '0';
-                rx_data  <= (others => '0');
-                rx_bits  <= (others => '0');
-            elsif rx_valid = '0' or rx_ready_i = '1' then
-                rx_valid <= sh_put;
-                rx_data  <= sh_rx;
-                rx_bits  <= sh_bits;
-            end if;
-        end if;
-    end process rx_buf_proc;
-
-    mosi_o     <= sh_dout;
-    miso_o     <= sh_dout;
-    rx_valid_o <= rx_valid;
-    rx_data_o  <= rx_data;
-    rx_bits_o  <= rx_bits;
+    mosi_o  <= sh_dout;
+    miso_o  <= sh_dout;
 
     sclk_oe <= not dbg;
     cs_n_oe <= not dbg;

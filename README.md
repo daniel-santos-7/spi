@@ -3,7 +3,7 @@
 Dual-role SPI in VHDL-93: one set of pins and one shift core, used either as a master or as a slave.
 
 - SPI mode 0, MSB first, one word of up to `WIDTH` bits per `CS#` frame
-- One shift core (`spi_shift`) in `spi_port`, shared by both roles: the master and the slave only produce the timing strobes that move it
+- Split into control (`spi_ctrl`) and datapath (`spi_datapath`), one of each in `spi_port`, shared by both roles: the control produces the timing strobes for the selected role and the datapath shifts, counts and buffers
 - One word size, `WIDTH` (default 32), for both roles; one client interface for both roles: the word to send goes straight into the shift register (`tx_*`) and a one-word receive buffer delivers the word received (`rx_*`), both behind a ready/valid handshake
 - Master: generates SCK and `CS#`; each write is one frame of 1 to `WIDTH` bits (`tx_bits`)
 - Slave: follows an external SCK and `CS#` and reports one word per frame, with its bit count; a frame longer than `WIDTH` bits keeps its first `WIDTH` bits. Oversampled by the system clock (no second clock domain)
@@ -14,14 +14,14 @@ Dual-role SPI in VHDL-93: one set of pins and one shift core, used either as a m
 
 ```
 rtl/spi_sync.vhdl     spi_port input synchronisers (two flip-flops each)
-rtl/spi_shift.vhdl    shift core (one instance in spi_port)
-rtl/spi_ctrl.vhdl     strobes for either role: master SCK/CS# FSM or slave edge detection
-rtl/spi_port.vhdl     pins, role select, the receive buffer and the shared shift core
+rtl/spi_datapath.vhdl datapath: shift registers, bit count, frame length and receive buffer
+rtl/spi_ctrl.vhdl     control: master SCK/CS# FSM, slave edge detection, transmit ready
+rtl/spi_port.vhdl     pins, role select, control and datapath
 tbs/tb_spi_port.vhdl  self-checking testbench: two ports on one bus
 Makefile              GHDL analysis, simulation and Yosys synthesis
 ```
 
-`make check` analyses and elaborates the design with GHDL (`TOP=spi_shift`, `spi_ctrl` or `spi_port`, default `spi_port`). `make synth` runs a generic Yosys synthesis of `TOP` with the GHDL plugin and prints the cell count.
+`make check` analyses and elaborates the design with GHDL (`TOP=spi_datapath`, `spi_ctrl` or `spi_port`, default `spi_port`). `make synth` runs a generic Yosys synthesis of `TOP` with the GHDL plugin and prints the cell count.
 
 `make sim` runs the testbench, which wires two `spi_port` instances to one modelled bus (pull resistors, no tri-state inside the design), runs random frames with one as master and the other as slave (`tx_bits` from 0 to beyond `WIDTH`), then swaps the roles, and finally straps both as slaves and drives the pins from a software host with frames of any length (empty, shorter than `WIDTH`, exactly `WIDTH` and longer, up to `2·WIDTH+8` bits). In that last phase one frame goes out with no reply written right after a shorter frame, a reply written before an empty frame must go out in the next one, a word offered during a frame must not be taken, and one word is left unread while the next frame arrives. It checks every word both sides report, and the bit count the slave reports (the first `WIDTH` bits and a count of `WIDTH` for a longer frame), that the buffer keeps an unread word and drops what follows, that `tx_ready` stays low during a frame, that the underrun frame sends zeros, the reply bits the host samples (zeros after the `WIDTH`-th), frame boundaries and length, SCK and `CS#` timing, back-to-back frames, pad contention, that a slave port ignores `tx_bits` (driven all ones) and that the master inside it stays idle. It stops at the first error and prints `PASS` with coverage counts at the end. `make test` runs it with `WIDTH` = 16, 32 and 64. Generics go in `GENERICS`, e.g. `make sim GENERICS="-gSCK_DIV=7 -gSEED=3 -gNUM_FRAMES=200"` (`SCK_DIV` at least 5, because the slave needs SCK ≤ clk/10). `make wave` does the same and writes `build/tb_spi_port.ghw`.
 
@@ -40,9 +40,7 @@ The input `dbg_i` picks the role:
 | 0 | master | driven (`_oe` = 1) | input |
 | 1 | slave | inputs | driven while `CS#` is low, released otherwise |
 
-`spi_port` holds a single `spi_shift` and, in `rx_buf_proc`, a single receive buffer with the word and the bit count, behind one client interface shared by both roles: transmit (`tx_valid_i`, `tx_ready_o`, `tx_data_i`, `tx_bits_i`) and receive (`rx_valid_o`, `rx_ready_i`, `rx_data_o`, `rx_bits_o`). `dbg` selects the strobes that drive the core (the master's or the slave's) and its data in (`miso_i` or the synchronised MOSI). `tx_bits_i` only matters as master; a slave always sends up to `WIDTH` bits. The core's output bit goes to both `mosi_o` and `miso_o`; only the one whose `_oe` is set reaches the pin. A word left in the receive buffer when `dbg` changes is still delivered on `rx_*`. A transmit word written and not yet sent when `dbg` changes goes out in the other role's next frame.
-
-The receive buffer holds one word, with a ready/valid handshake on the output. While it is empty (`valid` low), it copies the core's word on every cycle and `valid` takes the core's `rx_valid`, so it keeps the word offered in the cycle it fills. While it is full, nothing changes until the client's `rx_ready`, and then the same copy happens once, so a word offered in that cycle is kept and `valid` falls otherwise. There is no ready towards the core: it cannot be held back, so a word that arrives while the buffer is full and `rx_ready` is low is dropped. The outputs follow the core while `rx_valid` is low and mean nothing then.
+`spi_port` holds one `spi_ctrl` and one `spi_datapath` behind one client interface shared by both roles: transmit (`tx_valid_i`, `tx_ready_o`, `tx_data_i`, `tx_bits_i`) and receive (`rx_valid_o`, `rx_ready_i`, `rx_data_o`, `rx_bits_o`). `dbg` selects the strobes that drive the datapath (the master's or the slave's, inside `spi_ctrl`) and its data in (`miso_i` or the synchronised MOSI). `tx_bits_i` only matters as master; a slave always sends up to `WIDTH` bits. The datapath's output bit goes to both `mosi_o` and `miso_o`; only the one whose `_oe` is set reaches the pin. A word left in the receive buffer when `dbg` changes is still delivered on `rx_*`. A transmit word written and not yet sent when `dbg` changes goes out in the other role's next frame.
 
 Every asynchronous input goes through a two-flip-flop synchroniser, all in `spi_sync`: `dbg_i`, and SCK, `CS#` and MOSI on the way to the slave. The master needs none, since it only samples MISO at its own SCK edge. `dbg_o` gives the synchronised strap back to the client. It is a strap, not a run-time switch: change it only while the master is idle, no slave frame is in progress and no slave reply is written but not yet sent. While it is 1, `tx_valid_i` only loads the slave's reply and never starts a master frame. While it is 0, the slave sees `CS#` as high, so master traffic never reaches it.
 
@@ -68,21 +66,22 @@ The slave sees `CS#` through the synchroniser, so the edges are detected two to 
 
 Neither side knows about commands: what the words mean, and whether a frame of the wrong length is used or dropped, is up to the client.
 
-## spi_shift
+## spi_datapath
 
-A transmit and a receive shift register (`WIDTH` bits each) and a bit counter, moved by four one-cycle strobes. The client writes the transmit register directly; the received word goes to the active role's receive buffer. It does not know which side of the link it is on.
+The registers that hold and move the data, driven by the control's one-cycle strobes and write (`load_i`). It decides nothing about frames; it reports the bit count back as status (`done_o`). It does not know which side of the link it is on.
 
-- `start_i` (`CS#` falls): clears the receive register and the count, and clears `ready_reg` (set again by `stop_i`).
+- `start_i` (`CS#` falls): clears the receive register and the count.
 - `rise_i` (SCK rises): shifts `din_i` into the receive register and counts the bit, until the count reaches `WIDTH`; later bits are ignored.
 - `fall_i` (SCK falls): shifts the transmit register, with zeros shifted in, so `dout_o` (its MSB) shows the next bit, and zeros after the `WIDTH`-th.
-- `stop_i` (`CS#` rises): offers the word to the receive buffer and clears the transmit register if the frame had at least one bit (the count only returns to 0 at `start_i`), so an underrun after a shorter frame sends zeros, not what that frame left. After an empty frame the word written before it stays for the next one.
-- Write (`tx_valid_i` and `tx_ready_o`): copies `tx_data_i` into the transmit register; `dout_o` is its MSB.
-- `tx_ready_o` (`ready_reg`): the transmit register may take a word, only between frames. A second write before a frame replaces the first.
-- `rx_valid_o` (`stop_i`), with the receive register on `rx_data_o` and the count on `rx_bits_o`: the word offered to the receive buffer.
+- `stop_i` (`CS#` rises): offers the word and its count to the receive buffer, and clears the transmit register if the frame had at least one bit (the count only returns to 0 at `start_i`), so an underrun after a shorter frame sends zeros, not what that frame left. After an empty frame the word written before it stays for the next one.
+- `load_i` (a client write): copies `tx_data_i` into the transmit register and `tx_bits_i` into `wlen`.
+- `done_o`: the count has reached `wlen` or `WIDTH`, so a length of 0 or above `WIDTH` gives `WIDTH` bits. Only the master control uses it, to end its frame.
+
+The receive buffer holds one word, with a ready/valid handshake on the output. While it is empty (`valid` low), it copies the receive register and the count on every cycle and `valid` takes `stop_i`, so it keeps the word offered in the cycle it fills. While it is full, nothing changes until the client's `rx_ready`, and then the same copy happens once, so a word offered in that cycle is kept and `valid` falls otherwise. There is no ready towards the shift register: the link cannot be held back, so a word that arrives while the buffer is full and `rx_ready` is low is dropped. The outputs follow the receive register while `rx_valid` is low and mean nothing then.
 
 ## spi_ctrl
 
-Produces the four strobes for the role `dbg_i` selects. As master, an FSM (`IDLE`, `SCK_LO`, `SCK_HI`, `STOP`) generates SCK and `CS#` from `SCK_DIV` and times the strobes to its own clock (so no edge detection is involved). It starts a frame in the cycle the client's `tx_valid_i` is high in `IDLE` (the core takes the word in that cycle), latches the length (`wlen`, from `tx_bits_i`) and counts the bits sent (`wcnt`); at each falling edge the frame ends when the count reaches the length or `WIDTH`, so a length of 0 or above `WIDTH` gives `WIDTH` bits. Its `stop` comes in the `STOP` cycle, the first one with `CS#` high, and `tx_valid_i` is ignored while `dbg_i` is 1. As slave, two registers detect the edges of the synchronised SCK and `CS#`.
+Produces the four strobes and the client write for the role `dbg_i` selects, and owns the transmit handshake: `ready_reg` (`tx_ready_o`) is high between frames, cleared by `start` and set again by `stop`, and a write (`load_o`) is `tx_valid_i` and `ready_reg`; a second write before a frame replaces the first. As master, an FSM (`IDLE`, `SCK_LO`, `SCK_HI`, `STOP`) generates SCK and `CS#` from `SCK_DIV` and times the strobes to its own clock (so no edge detection is involved). A write in `IDLE` starts a frame in that cycle (the datapath takes the word in the same cycle), and the frame ends at the falling edge where the datapath's `done_i` is high. Its `stop` comes in the `STOP` cycle, the first one with `CS#` high, and a write never starts a frame while `dbg_i` is 1. As slave, two registers detect the edges of the synchronised SCK and `CS#`.
 
 ## License
 

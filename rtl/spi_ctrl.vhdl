@@ -7,13 +7,10 @@
 
 library IEEE;
 use IEEE.std_logic_1164.all;
-use IEEE.numeric_std.all;
 
 entity spi_ctrl is
     generic (
-        SCK_DIV  : positive := 1;
-        WIDTH    : positive := 32;
-        CNT_BITS : positive := 6
+        SCK_DIV : positive := 1
     );
     port (
         clk_i      : in  std_logic;
@@ -24,11 +21,13 @@ entity spi_ctrl is
         sclk_o     : out std_logic;
         cs_n_o     : out std_logic;
         tx_valid_i : in  std_logic;
-        tx_bits_i  : in  std_logic_vector(CNT_BITS-1 downto 0);
+        tx_ready_o : out std_logic;
+        done_i     : in  std_logic;
         start_o    : out std_logic;
         stop_o     : out std_logic;
         rise_o     : out std_logic;
-        fall_o     : out std_logic
+        fall_o     : out std_logic;
+        load_o     : out std_logic
     );
 end entity spi_ctrl;
 
@@ -36,34 +35,34 @@ architecture rtl of spi_ctrl is
 
     type state_t is (IDLE, SCK_LO, SCK_HI, STOP);
 
-    signal state    : state_t;
-    signal cnt      : natural range 0 to SCK_DIV;
-    signal sclk     : std_logic;
-    signal cs_n     : std_logic;
-    signal stop_reg : std_logic;
-    signal ready    : std_logic;
-    signal cnt_en   : std_logic;
-    signal cnt_end  : std_logic;
-    signal wcnt     : unsigned(CNT_BITS-1 downto 0);
-    signal wlen     : unsigned(CNT_BITS-1 downto 0);
-    signal m_end    : std_logic;
+    signal state     : state_t;
+    signal cnt       : natural range 0 to SCK_DIV;
+    signal sclk      : std_logic;
+    signal cs_n      : std_logic;
+    signal stop_reg  : std_logic;
+    signal ready_reg : std_logic;
+    signal load      : std_logic;
+    signal start_sel : std_logic;
+    signal stop_sel  : std_logic;
+    signal cnt_en    : std_logic;
+    signal cnt_end   : std_logic;
 
-    signal sclk_reg : std_logic;
-    signal cs_n_reg : std_logic;
+    signal sclk_reg  : std_logic;
+    signal cs_n_reg  : std_logic;
 
-    signal m_start  : std_logic;
-    signal m_rise   : std_logic;
-    signal m_fall   : std_logic;
-    signal s_start  : std_logic;
-    signal s_stop   : std_logic;
-    signal s_rise   : std_logic;
-    signal s_fall   : std_logic;
+    signal m_start   : std_logic;
+    signal m_rise    : std_logic;
+    signal m_fall    : std_logic;
+    signal s_start   : std_logic;
+    signal s_stop    : std_logic;
+    signal s_rise    : std_logic;
+    signal s_fall    : std_logic;
 
 begin
 
     cnt_end  <= '1' when cnt = SCK_DIV-1 else '0';
-    m_start  <= tx_valid_i and ready and not dbg_i;
-    m_end    <= '1' when wcnt = wlen or wcnt = WIDTH else '0';
+    load     <= tx_valid_i and ready_reg;
+    m_start  <= load and not dbg_i;
 
     fsm_proc: process(clk_i)
     begin
@@ -73,7 +72,6 @@ begin
                 sclk     <= '0';
                 cs_n     <= '1';
                 cnt_en   <= '0';
-                ready    <= '1';
                 stop_reg <= '0';
             else
                 case state is
@@ -82,7 +80,6 @@ begin
                             state  <= SCK_LO;
                             cs_n   <= '0';
                             cnt_en <= '1';
-                            ready  <= '0';
                         end if;
                     when SCK_LO =>
                         if cnt_end = '1' then
@@ -92,7 +89,7 @@ begin
                     when SCK_HI =>
                         if cnt_end = '1' then
                             sclk <= '0';
-                            if m_end = '1' then
+                            if done_i = '1' then
                                 state    <= STOP;
                                 cs_n     <= '1';
                                 cnt_en   <= '0';
@@ -103,7 +100,6 @@ begin
                         end if;
                     when STOP =>
                         state    <= IDLE;
-                        ready    <= '1';
                         stop_reg <= '0';
                 end case;
             end if;
@@ -124,21 +120,6 @@ begin
             end if;
         end if;
     end process cnt_proc;
-
-    word_proc: process(clk_i)
-    begin
-        if rising_edge(clk_i) then
-            if rst_i = '1' then
-                wcnt <= (others => '0');
-                wlen <= (others => '0');
-            elsif m_start = '1' then
-                wcnt <= (others => '0');
-                wlen <= unsigned(tx_bits_i);
-            elsif m_rise = '1' then
-                wcnt <= wcnt + 1;
-            end if;
-        end if;
-    end process word_proc;
 
     m_rise <= '1' when state = SCK_LO and cnt_end = '1' else '0';
     m_fall <= '1' when state = SCK_HI and cnt_end = '1' else '0';
@@ -161,11 +142,29 @@ begin
     s_rise  <= sclk_i and not sclk_reg and not cs_n_i;
     s_fall  <= sclk_reg and not sclk_i and not cs_n_i;
 
+    start_sel <= s_start when dbg_i = '1' else m_start;
+    stop_sel  <= s_stop  when dbg_i = '1' else stop_reg;
+
+    ready_proc: process(clk_i)
+    begin
+        if rising_edge(clk_i) then
+            if rst_i = '1' then
+                ready_reg <= '1';
+            elsif start_sel = '1' then
+                ready_reg <= '0';
+            elsif stop_sel = '1' then
+                ready_reg <= '1';
+            end if;
+        end if;
+    end process ready_proc;
+
     sclk_o     <= sclk;
     cs_n_o     <= cs_n;
-    start_o    <= s_start when dbg_i = '1' else m_start;
-    stop_o     <= s_stop  when dbg_i = '1' else stop_reg;
+    tx_ready_o <= ready_reg;
+    start_o    <= start_sel;
+    stop_o     <= stop_sel;
     rise_o     <= s_rise  when dbg_i = '1' else m_rise;
     fall_o     <= s_fall  when dbg_i = '1' else m_fall;
+    load_o     <= load;
 
 end architecture rtl;
