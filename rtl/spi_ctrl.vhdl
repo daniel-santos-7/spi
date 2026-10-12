@@ -13,29 +13,29 @@ entity spi_ctrl is
         SCK_DIV : positive := 1
     );
     port (
-        clk_i      : in  std_logic;
-        rst_i      : in  std_logic;
-        role_req_i : in  std_logic;  -- requested role (1 = master)
-        role_ack_o : out std_logic;  -- role in effect (1 = master)
-        s_start_i  : in  std_logic;  -- slave strobes (spi_edge)
-        s_stop_i   : in  std_logic;
-        s_rise_i   : in  std_logic;
-        s_fall_i   : in  std_logic;
-        cs_pin_i   : in  std_logic;  -- CS# pin as is, for miso_oe
-        sclk_o     : out std_logic;
-        sclk_oe    : out std_logic;
-        cs_n_o     : out std_logic;
-        cs_n_oe    : out std_logic;
-        mosi_oe    : out std_logic;
-        miso_oe    : out std_logic;
-        tx_valid_i : in  std_logic;
-        tx_ready_o : out std_logic;
-        done_i     : in  std_logic;
-        start_o    : out std_logic;
-        stop_o     : out std_logic;
-        rise_o     : out std_logic;
-        fall_o     : out std_logic;
-        load_o     : out std_logic
+        clk_i       : in  std_logic;
+        rst_i       : in  std_logic;
+        role_req_i  : in  std_logic;  -- requested role (1 = master)
+        role_ack_o  : out std_logic;  -- role in effect (1 = master)
+        cs_n_fall_i : in  std_logic;  -- slave edges (spi_edge)
+        cs_n_rise_i : in  std_logic;
+        sclk_rise_i : in  std_logic;
+        sclk_fall_i : in  std_logic;
+        cs_pin_i    : in  std_logic;  -- CS# pin as is, for miso_oe
+        sclk_o      : out std_logic;
+        sclk_oe     : out std_logic;
+        cs_n_o      : out std_logic;
+        cs_n_oe     : out std_logic;
+        mosi_oe     : out std_logic;
+        miso_oe     : out std_logic;
+        tx_valid_i  : in  std_logic;
+        tx_ready_o  : out std_logic;
+        done_i      : in  std_logic;
+        start_o     : out std_logic;
+        stop_o      : out std_logic;
+        rise_o      : out std_logic;
+        fall_o      : out std_logic;
+        load_o      : out std_logic
     );
 end entity spi_ctrl;
 
@@ -80,7 +80,7 @@ begin
             else
                 case state_reg is
                     when S_IDLE =>
-                        if s_start_i = '1' then
+                        if cs_n_fall_i = '1' then
                             state_reg <= S_FRAME;
                             ready_reg <= '0';
                         elsif role_req_i = '1' then
@@ -88,7 +88,7 @@ begin
                             role_reg  <= '1';
                         end if;
                     when S_FRAME =>
-                        if s_stop_i = '1' then
+                        if cs_n_rise_i = '1' then
                             state_reg <= S_IDLE;
                             ready_reg <= '1';
                         end if;
@@ -148,10 +148,10 @@ begin
     m_fall  <= '1' when state_reg = M_SCK_HI and cnt_end    = '1' else '0';
 
     -- slave strobes, qualified by state the same way
-    s_start <= '1' when state_reg = S_IDLE  and s_start_i = '1' else '0';
-    s_stop  <= '1' when state_reg = S_FRAME and s_stop_i  = '1' else '0';
-    s_rise  <= '1' when state_reg = S_FRAME and s_rise_i  = '1' else '0';
-    s_fall  <= '1' when state_reg = S_FRAME and s_fall_i  = '1' else '0';
+    s_start <= '1' when state_reg = S_IDLE  and cs_n_fall_i = '1' else '0';
+    s_stop  <= '1' when state_reg = S_FRAME and cs_n_rise_i = '1' else '0';
+    s_rise  <= '1' when state_reg = S_FRAME and sclk_rise_i = '1' else '0';
+    s_fall  <= '1' when state_reg = S_FRAME and sclk_fall_i = '1' else '0';
 
     role_ack_o <= role_reg;
     sclk_o     <= sclk_reg;

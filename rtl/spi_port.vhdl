@@ -99,31 +99,31 @@ begin
     );
 
     spi_port_ctrl: entity work.spi_ctrl generic map (
-        SCK_DIV => SCK_DIV
+        SCK_DIV     => SCK_DIV
     ) port map (
-        clk_i      => clk_i,
-        rst_i      => rst_i,
-        role_req_i => role_req_i,
-        role_ack_o => spi_port_ctrl_role_ack,
-        s_start_i  => spi_port_edge_cs_n_fall,
-        s_stop_i   => spi_port_edge_cs_n_rise,
-        s_rise_i   => spi_port_edge_sclk_rise,
-        s_fall_i   => spi_port_edge_sclk_fall,
-        cs_pin_i   => cs_n_i,
-        sclk_o     => spi_port_ctrl_sclk,
-        sclk_oe    => spi_port_ctrl_sclk_oe,
-        cs_n_o     => spi_port_ctrl_cs_n,
-        cs_n_oe    => spi_port_ctrl_cs_n_oe,
-        mosi_oe    => spi_port_ctrl_mosi_oe,
-        miso_oe    => spi_port_ctrl_miso_oe,
-        tx_valid_i => tx_valid_i,
-        tx_ready_o => spi_port_ctrl_tx_ready,
-        done_i     => spi_port_datapath_done,
-        start_o    => spi_port_ctrl_start,
-        stop_o     => spi_port_ctrl_stop,
-        rise_o     => spi_port_ctrl_rise,
-        fall_o     => spi_port_ctrl_fall,
-        load_o     => spi_port_ctrl_load
+        clk_i       => clk_i,
+        rst_i       => rst_i,
+        role_req_i  => role_req_i,
+        role_ack_o  => spi_port_ctrl_role_ack,
+        cs_n_fall_i => spi_port_edge_cs_n_fall,
+        cs_n_rise_i => spi_port_edge_cs_n_rise,
+        sclk_rise_i => spi_port_edge_sclk_rise,
+        sclk_fall_i => spi_port_edge_sclk_fall,
+        cs_pin_i    => cs_n_i,
+        sclk_o      => spi_port_ctrl_sclk,
+        sclk_oe     => spi_port_ctrl_sclk_oe,
+        cs_n_o      => spi_port_ctrl_cs_n,
+        cs_n_oe     => spi_port_ctrl_cs_n_oe,
+        mosi_oe     => spi_port_ctrl_mosi_oe,
+        miso_oe     => spi_port_ctrl_miso_oe,
+        tx_valid_i  => tx_valid_i,
+        tx_ready_o  => spi_port_ctrl_tx_ready,
+        done_i      => spi_port_datapath_done,
+        start_o     => spi_port_ctrl_start,
+        stop_o      => spi_port_ctrl_stop,
+        rise_o      => spi_port_ctrl_rise,
+        fall_o      => spi_port_ctrl_fall,
+        load_o      => spi_port_ctrl_load
     );
 
     spi_port_datapath: entity work.spi_datapath generic map (
