@@ -57,6 +57,10 @@ architecture rtl of spi_ctrl is
     signal m_start      : std_logic;
     signal m_rise       : std_logic;
     signal m_fall       : std_logic;
+    signal s_start      : std_logic;
+    signal s_stop       : std_logic;
+    signal s_rise       : std_logic;
+    signal s_fall       : std_logic;
 
 begin
 
@@ -141,8 +145,15 @@ begin
         end if;
     end process cnt_proc;
 
+    -- master strobes, qualified by state
     m_rise <= '1' when state_reg = M_SCK_LO and cnt_end = '1' else '0';
     m_fall <= '1' when state_reg = M_SCK_HI and cnt_end = '1' else '0';
+
+    -- slave strobes, qualified by state the same way
+    s_start <= '1' when state_reg = S_IDLE  and s_start_i = '1' else '0';
+    s_stop  <= '1' when state_reg = S_FRAME and s_stop_i  = '1' else '0';
+    s_rise  <= '1' when state_reg = S_FRAME and s_rise_i  = '1' else '0';
+    s_fall  <= '1' when state_reg = S_FRAME and s_fall_i  = '1' else '0';
 
     role_ack_o <= role_reg;
     sclk_o     <= sclk_reg;
@@ -152,10 +163,10 @@ begin
     mosi_oe    <= role_reg;
     miso_oe    <= not (cs_pin_i or role_reg);
     tx_ready_o <= ready_reg;
-    start_o    <= '1' when m_start = '1' or (s_start_i = '1' and state_reg = S_IDLE) else '0';
-    stop_o     <= '1' when stop_reg = '1' or (s_stop_i = '1' and state_reg = S_FRAME) else '0';
-    rise_o     <= '1' when m_rise = '1' or (s_rise_i = '1' and state_reg = S_FRAME) else '0';
-    fall_o     <= '1' when m_fall = '1' or (s_fall_i = '1' and state_reg = S_FRAME) else '0';
+    start_o    <= m_start or s_start;
+    stop_o     <= stop_reg or s_stop;
+    rise_o     <= m_rise or s_rise;
+    fall_o     <= m_fall or s_fall;
     load_o     <= load;
 
 end architecture rtl;
