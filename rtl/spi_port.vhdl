@@ -67,8 +67,7 @@ architecture rtl of spi_port is
     signal spi_port_ctrl_shift       : std_logic;
     signal spi_port_ctrl_load        : std_logic;
 
-    signal spi_port_datapath_mosi    : std_logic;
-    signal spi_port_datapath_miso    : std_logic;
+    signal spi_port_datapath_dout    : std_logic;
     signal spi_port_datapath_done    : std_logic;
     signal spi_port_datapath_rx_valid : std_logic;
     signal spi_port_datapath_rx_data : std_logic_vector(WIDTH-1 downto 0);
@@ -140,8 +139,7 @@ begin
         role_i     => spi_port_ctrl_role_ack,
         miso_i     => miso_i,
         mosi_i     => spi_port_sync_mosi,
-        mosi_o     => spi_port_datapath_mosi,
-        miso_o     => spi_port_datapath_miso,
+        dout_o     => spi_port_datapath_dout,
         tx_data_i  => tx_data_i,
         tx_bits_i  => tx_bits_i,
         done_o     => spi_port_datapath_done,
@@ -156,9 +154,9 @@ begin
     sclk_oe    <= spi_port_ctrl_sclk_oe;
     cs_n_o     <= spi_port_ctrl_cs_n;
     cs_n_oe    <= spi_port_ctrl_cs_n_oe;
-    mosi_o     <= spi_port_datapath_mosi;
+    mosi_o     <= spi_port_datapath_dout;
     mosi_oe    <= spi_port_ctrl_mosi_oe;
-    miso_o     <= spi_port_datapath_miso;
+    miso_o     <= spi_port_datapath_dout;
     miso_oe    <= spi_port_ctrl_miso_oe;
     tx_ready_o <= spi_port_ctrl_tx_ready;
     rx_data_o  <= spi_port_datapath_rx_data;
