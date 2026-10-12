@@ -41,13 +41,12 @@ end entity spi_ctrl;
 
 architecture rtl of spi_ctrl is
 
-    type state_t is (S_IDLE, S_FRAME, M_IDLE, M_SCK_LO, M_SCK_HI, M_STOP);
+    type state_t is (S_IDLE, S_FRAME, M_IDLE, M_SCK_LO, M_SCK_HI, M_END);
 
     signal state_reg    : state_t;
     signal cnt_reg      : natural range 0 to SCK_DIV;
     signal sclk_reg     : std_logic;
     signal cs_n_reg     : std_logic;
-    signal stop_reg     : std_logic;
     signal ready_reg    : std_logic;
     signal role_reg     : std_logic;
     signal load         : std_logic;
@@ -55,6 +54,7 @@ architecture rtl of spi_ctrl is
     signal cnt_end      : std_logic;
 
     signal m_start      : std_logic;
+    signal m_stop       : std_logic;
     signal m_rise       : std_logic;
     signal m_fall       : std_logic;
     signal s_start      : std_logic;
@@ -76,7 +76,6 @@ begin
                 sclk_reg   <= '0';
                 cs_n_reg   <= '1';
                 cnt_en_reg <= '0';
-                stop_reg   <= '0';
                 ready_reg  <= '1';
                 role_reg   <= '0';
             else
@@ -113,17 +112,15 @@ begin
                         if cnt_end = '1' then
                             sclk_reg <= '0';
                             if done_i = '1' then
-                                state_reg  <= M_STOP;
+                                state_reg  <= M_END;
                                 cs_n_reg   <= '1';
                                 cnt_en_reg <= '0';
-                                stop_reg   <= '1';
                             else
                                 state_reg <= M_SCK_LO;
                             end if;
                         end if;
-                    when M_STOP =>
+                    when M_END =>
                         state_reg <= M_IDLE;
-                        stop_reg  <= '0';
                         ready_reg <= '1';
                 end case;
             end if;
@@ -146,6 +143,7 @@ begin
     end process cnt_proc;
 
     -- master strobes, qualified by state
+    m_stop <= '1' when state_reg = M_END else '0';
     m_rise <= '1' when state_reg = M_SCK_LO and cnt_end = '1' else '0';
     m_fall <= '1' when state_reg = M_SCK_HI and cnt_end = '1' else '0';
 
@@ -164,7 +162,7 @@ begin
     miso_oe    <= not (cs_pin_i or role_reg);
     tx_ready_o <= ready_reg;
     start_o    <= m_start or s_start;
-    stop_o     <= stop_reg or s_stop;
+    stop_o     <= m_stop or s_stop;
     rise_o     <= m_rise or s_rise;
     fall_o     <= m_fall or s_fall;
     load_o     <= load;
