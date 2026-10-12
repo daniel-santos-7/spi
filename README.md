@@ -72,8 +72,8 @@ Neither side knows about commands: what the words mean, and whether a frame of t
 The registers that hold and move the data, driven by the control's one-cycle strobes and write (`load_i`). It decides nothing about frames; it reports the bit count back as status (`done_o`). The only thing it knows about the role is which pin feeds the receive register: `miso_i` as master, the synchronised MOSI as slave (`role_i`, the role in effect from the control). Its output bit goes to both `mosi_o` and `miso_o`.
 
 - `start_i` (`CS#` falls): clears the receive register and the count.
-- `rise_i` (SCK rises): shifts `din_i` into the receive register and counts the bit, until the count reaches `WIDTH`; later bits are ignored.
-- `fall_i` (SCK falls): shifts the transmit register, with zeros shifted in, so `dout_o` (its MSB) shows the next bit, and zeros after the `WIDTH`-th.
+- `sample_i` (SCK rises, in mode 0): shifts `din_i` into the receive register and counts the bit, until the count reaches `WIDTH`; later bits are ignored.
+- `shift_i` (SCK falls, in mode 0): shifts the transmit register, with zeros shifted in, so `dout_o` (its MSB) shows the next bit, and zeros after the `WIDTH`-th.
 - `stop_i` (`CS#` rises): offers the word and its count to the receive buffer, and clears the transmit register if the frame had at least one bit (the count only returns to 0 at `start_i`), so an underrun after a shorter frame sends zeros, not what that frame left. After an empty frame the word written before it stays for the next one.
 - `load_i` (a client write): copies `tx_data_i` into the transmit register and `tx_bits_i` into `wlen_reg`.
 - `done_o`: the count has reached `wlen_reg` or `WIDTH`, so a length of 0 or above `WIDTH` gives `WIDTH` bits. Only the master control uses it, to end its frame.
@@ -82,7 +82,7 @@ The receive buffer holds one word, with a ready/valid handshake on the output. W
 
 ## spi_edge
 
-Detects the slave's edges on the synchronised SCK and `CS#`, with one register each holding the previous value: `cs_n_fall_o` and `cs_n_rise_o` on the `CS#` edges, `sclk_rise_o` and `sclk_fall_o` on the SCK edges while `CS#` is low. `spi_ctrl` takes them as the slave's `start`, `stop`, `rise` and `fall`. It knows nothing about the role: it also sees the master's own `CS#` and SCK, and `spi_ctrl` decides when its strobes count.
+Detects the slave's edges on the synchronised SCK and `CS#`, with one register each holding the previous value: `cs_n_fall_o` and `cs_n_rise_o` on the `CS#` edges, `sclk_rise_o` and `sclk_fall_o` on the SCK edges while `CS#` is low. `spi_ctrl` takes them as the slave's `start` and `stop` and, in mode 0, `sample` (SCK rise) and `shift` (SCK fall). It knows nothing about the role: it also sees the master's own `CS#` and SCK, and `spi_ctrl` decides when its strobes count.
 
 ## spi_ctrl
 
@@ -90,7 +90,7 @@ Holds the role in effect, produces the four strobes and the client write for tha
 
 - `role_reg` is the role in effect (1 = master), set on `S_IDLE → M_IDLE` and cleared on `M_IDLE → S_IDLE`, so it is 1 exactly in the master states. It drives `sclk_oe`, `cs_n_oe`, `mosi_oe` and `role_ack_o`, which goes both to the pin and to the datapath; `miso_oe` is high while the role is slave and the `CS#` pin, unsynchronised, is low.
 - `tx_ready_o` comes from a flip-flop (`ready_reg`) that the FSM keeps high exactly while it is in `S_IDLE` or `M_IDLE`, between frames, and a write (`load_o`) is `tx_valid_i` and `ready_reg`; a second write before a frame replaces the first. `m_start`, the master's `start` strobe, is `tx_valid_i` in `M_IDLE`, so a slave reply written in `S_IDLE` gives no `start`.
-- The strobes are the master's (`m_start` in `M_IDLE`, `m_stop` in `M_END` and the SCK edges in `M_SCK_LO`/`M_SCK_HI`) or the slave's: `start` only in `S_IDLE`, `stop`, `rise` and `fall` only in `S_FRAME`. Gating them by state rather than by role matters right after a switch from master to slave, when the edge detection still sees the master's own `CS#` rise. The slave strobes come from `spi_edge`.
+- The strobes are the master's (`m_start` in `M_IDLE`, `m_stop` in `M_END` and the SCK edges in `M_SCK_LO`/`M_SCK_HI`) or the slave's: `start` only in `S_IDLE`, `stop`, `rise` and `fall` only in `S_FRAME`. The outputs are named after what the datapath does, not after the SCK edge: `sample_o` is the SCK rise and `shift_o` the SCK fall, which is mode 0; another SPI mode would only change which edge feeds each. Gating them by state rather than by role matters right after a switch from master to slave, when the edge detection still sees the master's own `CS#` rise. The slave strobes come from `spi_edge`.
 
 ## License
 

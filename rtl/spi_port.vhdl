@@ -63,8 +63,8 @@ architecture rtl of spi_port is
     signal spi_port_ctrl_tx_ready    : std_logic;
     signal spi_port_ctrl_start       : std_logic;
     signal spi_port_ctrl_stop        : std_logic;
-    signal spi_port_ctrl_rise        : std_logic;
-    signal spi_port_ctrl_fall        : std_logic;
+    signal spi_port_ctrl_sample      : std_logic;
+    signal spi_port_ctrl_shift       : std_logic;
     signal spi_port_ctrl_load        : std_logic;
 
     signal spi_port_datapath_mosi    : std_logic;
@@ -121,8 +121,8 @@ begin
         done_i      => spi_port_datapath_done,
         start_o     => spi_port_ctrl_start,
         stop_o      => spi_port_ctrl_stop,
-        rise_o      => spi_port_ctrl_rise,
-        fall_o      => spi_port_ctrl_fall,
+        sample_o    => spi_port_ctrl_sample,
+        shift_o     => spi_port_ctrl_shift,
         load_o      => spi_port_ctrl_load
     );
 
@@ -134,8 +134,8 @@ begin
         rst_i      => rst_i,
         start_i    => spi_port_ctrl_start,
         stop_i     => spi_port_ctrl_stop,
-        rise_i     => spi_port_ctrl_rise,
-        fall_i     => spi_port_ctrl_fall,
+        sample_i   => spi_port_ctrl_sample,
+        shift_i    => spi_port_ctrl_shift,
         load_i     => spi_port_ctrl_load,
         role_i     => spi_port_ctrl_role_ack,
         miso_i     => miso_i,

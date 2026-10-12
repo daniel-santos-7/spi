@@ -20,8 +20,8 @@ entity spi_datapath is
 
         start_i    : in  std_logic;
         stop_i     : in  std_logic;
-        rise_i     : in  std_logic;
-        fall_i     : in  std_logic;
+        sample_i   : in  std_logic;
+        shift_i    : in  std_logic;
         load_i     : in  std_logic;
 
         role_i     : in  std_logic;  -- 1 = master: sample miso_i
@@ -68,7 +68,7 @@ begin
                 bit_cnt_reg <= (others => '0');
             elsif start_i = '1' then
                 bit_cnt_reg <= (others => '0');
-            elsif rise_i = '1' and bit_cnt_reg /= WIDTH then
+            elsif sample_i = '1' and bit_cnt_reg /= WIDTH then
                 bit_cnt_reg <= bit_cnt_reg + 1;
             end if;
         end if;
@@ -81,7 +81,7 @@ begin
                 tx_sh_reg <= (others => '0');
             elsif load_i = '1' then
                 tx_sh_reg <= tx_data_i;
-            elsif fall_i = '1' then
+            elsif shift_i = '1' then
                 tx_sh_reg <= tx_sh_reg(WIDTH-2 downto 0) & '0';
             end if;
         end if;
@@ -105,7 +105,7 @@ begin
                 rx_sh_reg <= (others => '0');
             elsif start_i = '1' then
                 rx_sh_reg <= (others => '0');
-            elsif rise_i = '1' and bit_cnt_reg /= WIDTH then
+            elsif sample_i = '1' and bit_cnt_reg /= WIDTH then
                 rx_sh_reg <= rx_sh_reg(WIDTH-2 downto 0) & din;
             end if;
         end if;

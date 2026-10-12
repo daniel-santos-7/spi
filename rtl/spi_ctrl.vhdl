@@ -33,8 +33,8 @@ entity spi_ctrl is
         done_i      : in  std_logic;
         start_o     : out std_logic;
         stop_o      : out std_logic;
-        rise_o      : out std_logic;
-        fall_o      : out std_logic;
+        sample_o    : out std_logic;
+        shift_o     : out std_logic;
         load_o      : out std_logic
     );
 end entity spi_ctrl;
@@ -163,8 +163,8 @@ begin
     tx_ready_o <= ready_reg;
     start_o    <= m_start or s_start;
     stop_o     <= m_stop or s_stop;
-    rise_o     <= m_rise or s_rise;
-    fall_o     <= m_fall or s_fall;
+    sample_o   <= m_rise or s_rise;  -- mode 0: sample on SCK rise
+    shift_o    <= m_fall or s_fall;  -- and shift on SCK fall
     load_o     <= load;
 
 end architecture rtl;
