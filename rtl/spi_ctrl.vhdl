@@ -15,8 +15,8 @@ entity spi_ctrl is
     port (
         clk_i      : in  std_logic;
         rst_i      : in  std_logic;
-        dbg_i      : in  std_logic;  -- master enable, synchronised
-        drv_o      : out std_logic;  -- master frame, SCK/CS#/MOSI driven
+        dbg_i      : in  std_logic;  -- requested role (1 = master), synchronised
+        role_o     : out std_logic;  -- role in effect (1 = master)
         sclk_i     : in  std_logic;  -- sclk_i and cs_n_i must already be
         cs_n_i     : in  std_logic;  -- synchronised to clk_i (spi_sync does it)
         cs_pin_i   : in  std_logic;  -- CS# pin as is, for miso_oe
@@ -39,7 +39,7 @@ end entity spi_ctrl;
 
 architecture rtl of spi_ctrl is
 
-    type state_t is (IDLE, SCK_LO, SCK_HI, STOP, SLAVE);
+    type state_t is (IDLE, SLAVE, MASTER, SCK_LO, SCK_HI, STOP);
 
     signal state_reg    : state_t;
     signal cnt_reg      : natural range 0 to SCK_DIV;
@@ -47,10 +47,11 @@ architecture rtl of spi_ctrl is
     signal cs_n_reg     : std_logic;
     signal stop_reg     : std_logic;
     signal ready_reg    : std_logic;
-    signal drv_reg      : std_logic;
+    signal role_reg     : std_logic;
     signal load         : std_logic;
     signal cnt_en_reg   : std_logic;
     signal cnt_end      : std_logic;
+    signal slv_idle     : std_logic;
     signal slv          : std_logic;
 
     signal sclk_dly_reg : std_logic;
@@ -68,7 +69,7 @@ begin
 
     cnt_end <= '1' when cnt_reg = SCK_DIV-1 else '0';
     load    <= tx_valid_i and ready_reg;
-    m_start <= load and dbg_i;
+    m_start <= load and role_reg;
 
     fsm_proc: process(clk_i)
     begin
@@ -80,19 +81,31 @@ begin
                 cnt_en_reg <= '0';
                 stop_reg   <= '0';
                 ready_reg  <= '1';
-                drv_reg    <= '0';
+                role_reg   <= '0';
             else
                 case state_reg is
                     when IDLE =>
+                        if s_start = '1' then
+                            state_reg <= SLAVE;
+                            ready_reg <= '0';
+                        elsif dbg_i = '1' then
+                            state_reg <= MASTER;
+                            role_reg  <= '1';
+                        end if;
+                    when SLAVE =>
+                        if s_stop = '1' then
+                            state_reg <= IDLE;
+                            ready_reg <= '1';
+                        end if;
+                    when MASTER =>
                         if m_start = '1' then
                             state_reg  <= SCK_LO;
                             cs_n_reg   <= '0';
                             cnt_en_reg <= '1';
                             ready_reg  <= '0';
-                            drv_reg    <= '1';
-                        elsif s_start = '1' then
-                            state_reg <= SLAVE;
-                            ready_reg <= '0';
+                        elsif dbg_i = '0' then
+                            state_reg <= IDLE;
+                            role_reg  <= '0';
                         end if;
                     when SCK_LO =>
                         if cnt_end = '1' then
@@ -112,15 +125,9 @@ begin
                             end if;
                         end if;
                     when STOP =>
-                        state_reg <= IDLE;
+                        state_reg <= MASTER;
                         stop_reg  <= '0';
                         ready_reg <= '1';
-                        drv_reg   <= '0';
-                    when SLAVE =>
-                        if s_stop = '1' then
-                            state_reg <= IDLE;
-                            ready_reg <= '1';
-                        end if;
                 end case;
             end if;
         end if;
@@ -141,9 +148,10 @@ begin
         end if;
     end process cnt_proc;
 
-    m_rise <= '1' when state_reg = SCK_LO and cnt_end = '1' else '0';
-    m_fall <= '1' when state_reg = SCK_HI and cnt_end = '1' else '0';
-    slv    <= '1' when state_reg = SLAVE else '0';
+    m_rise   <= '1' when state_reg = SCK_LO and cnt_end = '1' else '0';
+    m_fall   <= '1' when state_reg = SCK_HI and cnt_end = '1' else '0';
+    slv_idle <= '1' when state_reg = IDLE else '0';
+    slv      <= '1' when state_reg = SLAVE else '0';
 
     edge_proc: process(clk_i)
     begin
@@ -163,15 +171,15 @@ begin
     s_rise  <= sclk_i and not sclk_dly_reg and not cs_n_i;
     s_fall  <= sclk_dly_reg and not sclk_i and not cs_n_i;
 
-    drv_o      <= drv_reg;
+    role_o     <= role_reg;
     sclk_o     <= sclk_reg;
-    sclk_oe    <= drv_reg;
+    sclk_oe    <= role_reg;
     cs_n_o     <= cs_n_reg;
-    cs_n_oe    <= drv_reg;
-    mosi_oe    <= drv_reg;
-    miso_oe    <= not cs_pin_i and not drv_reg;
+    cs_n_oe    <= role_reg;
+    mosi_oe    <= role_reg;
+    miso_oe    <= not cs_pin_i and not role_reg;
     tx_ready_o <= ready_reg;
-    start_o    <= m_start or (s_start and ready_reg);
+    start_o    <= m_start or (s_start and slv_idle);
     stop_o     <= stop_reg or (s_stop and slv);
     rise_o     <= m_rise or (s_rise and slv);
     fall_o     <= m_fall or (s_fall and slv);

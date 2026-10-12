@@ -7,12 +7,15 @@
 --
 -- Two spi_port instances, A and B, share one set of pads modelled as
 -- resolved signals with pull resistors (CS# up, SCK/MOSI/MISO down).
--- Every port is a slave; dbg_i = 1 only lets a write start a master
--- frame, and SCK/CS#/MOSI are driven only during that frame.
+-- A port is a slave out of reset and becomes a master while its strap
+-- (dbg_i) is 1, switching only between frames.
 -- Phase 0 straps A as master and B as slave; phase 1 swaps the roles.
 -- In one full phase 0 frame both straps flip in the middle of the
--- frame and flip back before it ends: the frame and every check around
--- it must be unaffected.
+-- frame and flip back before it ends: neither port may change role, so
+-- the frame and every check around it must be unaffected. In the last
+-- phase 0 frame A's strap drops to 0 mid-frame and stays there: A must
+-- finish the frame as master and only then become a slave, without its
+-- own CS# rise reaching its slave logic.
 -- Every frame is one word of random data from the master, answered by
 -- a random reply word from the slave, with a random tx_bits: mostly 1
 -- to WIDTH bits, sometimes 0 or more than WIDTH, which must give WIDTH
@@ -40,9 +43,9 @@
 -- Checks: every word and bit count the slave reports, the
 -- words the master receives (the first tx_bits bits of the reply),
 -- CS# high time, SCK phases, MOSI/MISO changing only while SCK is low,
--- frame length, pad contention, that SCK/CS#/MOSI are driven only by
--- the master and only during its frames, that a slave port ignores
--- tx_bits (driven all ones) and never drives them.
+-- frame length, pad contention, pin release, that SCK/CS#/MOSI are
+-- driven by the master only, that a slave port ignores tx_bits (driven
+-- all ones).
 --
 ----------------------------------------------------------------------
 
@@ -427,7 +430,7 @@ begin
                 else
                     rnd(1, WIDTH, len);
                 end if;
-                if ph = 0 and f = GLITCH_F then
+                if ph = 0 and (f = GLITCH_F or f = NUM_FRAMES) then
                     len := WIDTH;
                 end if;
                 if len = 0 or len > WIDTH then
@@ -467,6 +470,13 @@ begin
                     cycles(4 * SCK_DIV);
                     strap_a <= '1';
                     strap_b <= '0';
+                end if;
+                if ph = 0 and f = NUM_FRAMES then
+                    -- drop A's strap mid-frame for good: A becomes a slave
+                    -- only once the frame is over
+                    cycles(4 * SCK_DIV);
+                    iso_check <= '0';
+                    strap_a   <= '0';
                 end if;
                 frame := frame + 1;
                 word  := word + 1;
@@ -741,7 +751,6 @@ begin
         variable lo_cnt : natural := 0;
         variable hi_cnt : natural := CS_MIN;
         variable frame  : natural := 0;
-        variable cs_drv : std_logic := '0';
     begin
         wait until rising_edge(clk) and chk_on = '1';
         sclk_p := sclk_in;
@@ -813,16 +822,15 @@ begin
                     report "bus: MISO changed while SCK is high" severity error;
             end if;
 
-            -- SCK, CS# and MOSI are driven together, only during a master
-            -- frame (CS# driven high for its last cycle only); MISO by the
-            -- slave while CS# is low
+            -- SCK, CS# and MOSI are driven together, by the master only;
+            -- MISO by the slave while CS# is low
             assert a_sclk_oe = a_cs_n_oe and a_mosi_oe = a_cs_n_oe and
                    b_sclk_oe = b_cs_n_oe and b_mosi_oe = b_cs_n_oe
                 report "bus: SCK, CS# and MOSI enables differ" severity error;
-            assert not (a_cs_n_oe = '1' and a_cs_n_o = '1' and cs_drv = '1') and
-                   not (b_cs_n_oe = '1' and b_cs_n_o = '1' and cs_drv = '1')
-                report "bus: CS# driven high for more than one cycle" severity error;
             if iso_check = '1' then
+                assert (sclk_pad = '0' or sclk_pad = '1') and (cs_n_pad = '0' or cs_n_pad = '1') and
+                       (mosi_pad = '0' or mosi_pad = '1')
+                    report "bus: master pins not driven" severity error;
                 if cs_n_in = '0' then
                     assert miso_pad = '0' or miso_pad = '1'
                         report "bus: MISO not driven by the slave while CS# is low" severity error;
@@ -834,11 +842,6 @@ begin
                     assert a_cs_n_oe = '0' and b_miso_oe = '0'
                         report "bus: slave port A drives master pins or master port B drives MISO" severity error;
                 end if;
-            end if;
-            if (a_cs_n_oe = '1' and a_cs_n_o = '1') or (b_cs_n_oe = '1' and b_cs_n_o = '1') then
-                cs_drv := '1';
-            else
-                cs_drv := '0';
             end if;
 
             sclk_p := sclk_in;
