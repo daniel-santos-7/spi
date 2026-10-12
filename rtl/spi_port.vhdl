@@ -15,33 +15,30 @@ entity spi_port is
         CNT_BITS : positive := 6
     );
     port (
-        clk_i        : in  std_logic;
-        rst_i        : in  std_logic;
-        dbg_i        : in  std_logic;
-        dbg_o        : out std_logic;
-        sclk_i       : in  std_logic;
-        sclk_o       : out std_logic;
-        sclk_oe      : out std_logic;
-        cs_n_i       : in  std_logic;
-        cs_n_o       : out std_logic;
-        cs_n_oe      : out std_logic;
-        mosi_i       : in  std_logic;
-        mosi_o       : out std_logic;
-        mosi_oe      : out std_logic;
-        miso_i       : in  std_logic;
-        miso_o       : out std_logic;
-        miso_oe      : out std_logic;
-        m_tx_valid_i : in  std_logic;
-        m_tx_ready_o : out std_logic;
-        m_tx_data_i  : in  std_logic_vector(WIDTH-1 downto 0);
-        m_tx_bits_i  : in  std_logic_vector(CNT_BITS-1 downto 0);
-        s_tx_valid_i : in  std_logic;
-        s_tx_ready_o : out std_logic;
-        s_tx_data_i  : in  std_logic_vector(WIDTH-1 downto 0);
-        rx_ready_i   : in  std_logic;
-        rx_data_o    : out std_logic_vector(WIDTH-1 downto 0);
-        rx_bits_o    : out std_logic_vector(CNT_BITS-1 downto 0);
-        rx_valid_o   : out std_logic
+        clk_i      : in  std_logic;
+        rst_i      : in  std_logic;
+        dbg_i      : in  std_logic;
+        dbg_o      : out std_logic;
+        sclk_i     : in  std_logic;
+        sclk_o     : out std_logic;
+        sclk_oe    : out std_logic;
+        cs_n_i     : in  std_logic;
+        cs_n_o     : out std_logic;
+        cs_n_oe    : out std_logic;
+        mosi_i     : in  std_logic;
+        mosi_o     : out std_logic;
+        mosi_oe    : out std_logic;
+        miso_i     : in  std_logic;
+        miso_o     : out std_logic;
+        miso_oe    : out std_logic;
+        tx_valid_i : in  std_logic;
+        tx_ready_o : out std_logic;
+        tx_data_i  : in  std_logic_vector(WIDTH-1 downto 0);
+        tx_bits_i  : in  std_logic_vector(CNT_BITS-1 downto 0);
+        rx_ready_i : in  std_logic;
+        rx_data_o  : out std_logic_vector(WIDTH-1 downto 0);
+        rx_bits_o  : out std_logic_vector(CNT_BITS-1 downto 0);
+        rx_valid_o : out std_logic
     );
 end entity spi_port;
 
@@ -59,10 +56,6 @@ architecture rtl of spi_port is
     signal sh_fall  : std_logic;
     signal sh_din   : std_logic;
     signal sh_dout  : std_logic;
-    signal sh_valid : std_logic;
-    signal sh_tx    : std_logic_vector(WIDTH-1 downto 0);
-    signal sh_txb   : std_logic_vector(CNT_BITS-1 downto 0);
-    signal sh_ready : std_logic;
     signal sh_rx    : std_logic_vector(WIDTH-1 downto 0);
     signal sh_bits  : std_logic_vector(CNT_BITS-1 downto 0);
     signal sh_put   : std_logic;
@@ -100,18 +93,15 @@ begin
         cs_n_i     => s_cs_n_s,
         sclk_o     => sclk_o,
         cs_n_o     => cs_n_o,
-        tx_valid_i => sh_valid,
-        tx_bits_i  => sh_txb,
+        tx_valid_i => tx_valid_i,
+        tx_bits_i  => tx_bits_i,
         start_o    => sh_start,
         stop_o     => sh_stop,
         rise_o     => sh_rise,
         fall_o     => sh_fall
     );
 
-    sh_din   <= s_mosi       when dbg = '1' else miso_i;
-    sh_valid <= s_tx_valid_i when dbg = '1' else m_tx_valid_i;
-    sh_tx    <= s_tx_data_i  when dbg = '1' else m_tx_data_i;
-    sh_txb   <= (others => '0') when dbg = '1' else m_tx_bits_i;
+    sh_din <= s_mosi when dbg = '1' else miso_i;
 
     spi_port_shift: entity work.spi_shift generic map (
         WIDTH    => WIDTH,
@@ -125,9 +115,9 @@ begin
         fall_i     => sh_fall,
         din_i      => sh_din,
         dout_o     => sh_dout,
-        tx_valid_i => sh_valid,
-        tx_data_i  => sh_tx,
-        tx_ready_o => sh_ready,
+        tx_valid_i => tx_valid_i,
+        tx_data_i  => tx_data_i,
+        tx_ready_o => tx_ready_o,
         rx_data_o  => sh_rx,
         rx_bits_o  => sh_bits,
         rx_valid_o => sh_put
@@ -148,13 +138,11 @@ begin
         end if;
     end process rx_buf_proc;
 
-    mosi_o       <= sh_dout;
-    miso_o       <= sh_dout;
-    m_tx_ready_o <= sh_ready and not dbg;
-    s_tx_ready_o <= sh_ready and dbg;
-    rx_valid_o   <= rx_valid;
-    rx_data_o    <= rx_data;
-    rx_bits_o    <= rx_bits;
+    mosi_o     <= sh_dout;
+    miso_o     <= sh_dout;
+    rx_valid_o <= rx_valid;
+    rx_data_o  <= rx_data;
+    rx_bits_o  <= rx_bits;
 
     sclk_oe <= not dbg;
     cs_n_oe <= not dbg;

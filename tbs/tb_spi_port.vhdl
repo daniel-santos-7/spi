@@ -35,9 +35,8 @@
 -- Checks: every word and bit count the slave reports, the
 -- words the master receives (the first tx_bits bits of the reply),
 -- CS# high time, SCK phases, MOSI/MISO changing only while SCK is low,
--- frame length, pad contention, pin release, and that the unused
--- role's transmit side inside each port takes no word while its client
--- drives junk.
+-- frame length, pad contention, pin release, that a slave port ignores
+-- tx_bits (driven all ones) and that its master stays idle.
 --
 ----------------------------------------------------------------------
 
@@ -109,7 +108,6 @@ architecture sim of tb_spi_port is
     signal sim_done  : std_logic := '0';
     signal chk_on    : std_logic := '0';
     signal iso_check : std_logic := '0';
-    signal junk_en   : std_logic := '0';
     signal swap      : std_logic := '0';
     signal strap_a   : std_logic := '0';
     signal strap_b   : std_logic := '1';
@@ -146,17 +144,14 @@ architecture sim of tb_spi_port is
     signal a_mosi_oe    : std_logic;
     signal a_miso_o     : std_logic;
     signal a_miso_oe    : std_logic;
-    signal a_m_tx_valid : std_logic;
-    signal a_m_tx_ready : std_logic;
-    signal a_m_tx_data  : word_t;
-    signal a_m_tx_bits  : bits_t;
+    signal a_tx_valid   : std_logic;
+    signal a_tx_ready   : std_logic;
+    signal a_tx_data    : word_t;
+    signal a_tx_bits    : bits_t;
     signal a_rx_ready   : std_logic;
     signal a_rx_data    : word_t;
     signal a_rx_bits    : std_logic_vector(CNT_BITS-1 downto 0);
     signal a_rx_valid   : std_logic;
-    signal a_s_tx_valid : std_logic;
-    signal a_s_tx_ready : std_logic;
-    signal a_s_tx_data  : word_t;
 
     -- port B
     signal b_dbg_o      : std_logic;
@@ -168,17 +163,14 @@ architecture sim of tb_spi_port is
     signal b_mosi_oe    : std_logic;
     signal b_miso_o     : std_logic;
     signal b_miso_oe    : std_logic;
-    signal b_m_tx_valid : std_logic;
-    signal b_m_tx_ready : std_logic;
-    signal b_m_tx_data  : word_t;
-    signal b_m_tx_bits  : bits_t;
+    signal b_tx_valid   : std_logic;
+    signal b_tx_ready   : std_logic;
+    signal b_tx_data    : word_t;
+    signal b_tx_bits    : bits_t;
     signal b_rx_ready   : std_logic;
     signal b_rx_data    : word_t;
     signal b_rx_bits    : std_logic_vector(CNT_BITS-1 downto 0);
     signal b_rx_valid   : std_logic;
-    signal b_s_tx_valid : std_logic;
-    signal b_s_tx_ready : std_logic;
-    signal b_s_tx_data  : word_t;
 
     -- master client (whichever port is strapped as master)
     signal m_tx_valid : std_logic := '0';
@@ -227,33 +219,30 @@ begin
         WIDTH    => WIDTH,
         CNT_BITS => CNT_BITS
     ) port map (
-        clk_i        => clk,
-        rst_i        => rst,
-        dbg_i        => strap_a,
-        dbg_o        => a_dbg_o,
-        sclk_i       => sclk_in,
-        sclk_o       => a_sclk_o,
-        sclk_oe      => a_sclk_oe,
-        cs_n_i       => cs_n_in,
-        cs_n_o       => a_cs_n_o,
-        cs_n_oe      => a_cs_n_oe,
-        mosi_i       => mosi_in,
-        mosi_o       => a_mosi_o,
-        mosi_oe      => a_mosi_oe,
-        miso_i       => miso_in,
-        miso_o       => a_miso_o,
-        miso_oe      => a_miso_oe,
-        m_tx_valid_i => a_m_tx_valid,
-        m_tx_ready_o => a_m_tx_ready,
-        m_tx_data_i  => a_m_tx_data,
-        m_tx_bits_i  => a_m_tx_bits,
-        s_tx_valid_i => a_s_tx_valid,
-        s_tx_ready_o => a_s_tx_ready,
-        s_tx_data_i  => a_s_tx_data,
-        rx_ready_i   => a_rx_ready,
-        rx_data_o    => a_rx_data,
-        rx_bits_o    => a_rx_bits,
-        rx_valid_o   => a_rx_valid
+        clk_i      => clk,
+        rst_i      => rst,
+        dbg_i      => strap_a,
+        dbg_o      => a_dbg_o,
+        sclk_i     => sclk_in,
+        sclk_o     => a_sclk_o,
+        sclk_oe    => a_sclk_oe,
+        cs_n_i     => cs_n_in,
+        cs_n_o     => a_cs_n_o,
+        cs_n_oe    => a_cs_n_oe,
+        mosi_i     => mosi_in,
+        mosi_o     => a_mosi_o,
+        mosi_oe    => a_mosi_oe,
+        miso_i     => miso_in,
+        miso_o     => a_miso_o,
+        miso_oe    => a_miso_oe,
+        tx_valid_i => a_tx_valid,
+        tx_ready_o => a_tx_ready,
+        tx_data_i  => a_tx_data,
+        tx_bits_i  => a_tx_bits,
+        rx_ready_i => a_rx_ready,
+        rx_data_o  => a_rx_data,
+        rx_bits_o  => a_rx_bits,
+        rx_valid_o => a_rx_valid
     );
 
     tb_spi_port_b: entity work.spi_port generic map (
@@ -261,33 +250,30 @@ begin
         WIDTH    => WIDTH,
         CNT_BITS => CNT_BITS
     ) port map (
-        clk_i        => clk,
-        rst_i        => rst,
-        dbg_i        => strap_b,
-        dbg_o        => b_dbg_o,
-        sclk_i       => sclk_in,
-        sclk_o       => b_sclk_o,
-        sclk_oe      => b_sclk_oe,
-        cs_n_i       => cs_n_in,
-        cs_n_o       => b_cs_n_o,
-        cs_n_oe      => b_cs_n_oe,
-        mosi_i       => mosi_in,
-        mosi_o       => b_mosi_o,
-        mosi_oe      => b_mosi_oe,
-        miso_i       => miso_in,
-        miso_o       => b_miso_o,
-        miso_oe      => b_miso_oe,
-        m_tx_valid_i => b_m_tx_valid,
-        m_tx_ready_o => b_m_tx_ready,
-        m_tx_data_i  => b_m_tx_data,
-        m_tx_bits_i  => b_m_tx_bits,
-        s_tx_valid_i => b_s_tx_valid,
-        s_tx_ready_o => b_s_tx_ready,
-        s_tx_data_i  => b_s_tx_data,
-        rx_ready_i   => b_rx_ready,
-        rx_data_o    => b_rx_data,
-        rx_bits_o    => b_rx_bits,
-        rx_valid_o   => b_rx_valid
+        clk_i      => clk,
+        rst_i      => rst,
+        dbg_i      => strap_b,
+        dbg_o      => b_dbg_o,
+        sclk_i     => sclk_in,
+        sclk_o     => b_sclk_o,
+        sclk_oe    => b_sclk_oe,
+        cs_n_i     => cs_n_in,
+        cs_n_o     => b_cs_n_o,
+        cs_n_oe    => b_cs_n_oe,
+        mosi_i     => mosi_in,
+        mosi_o     => b_mosi_o,
+        mosi_oe    => b_mosi_oe,
+        miso_i     => miso_in,
+        miso_o     => b_miso_o,
+        miso_oe    => b_miso_oe,
+        tx_valid_i => b_tx_valid,
+        tx_ready_o => b_tx_ready,
+        tx_data_i  => b_tx_data,
+        tx_bits_i  => b_tx_bits,
+        rx_ready_i => b_rx_ready,
+        rx_data_o  => b_rx_data,
+        rx_bits_o  => b_rx_bits,
+        rx_valid_o => b_rx_valid
     );
 
     sclk_pad <= a_sclk_o when a_sclk_oe = '1' else 'Z';
@@ -311,26 +297,22 @@ begin
     mosi_in <= to_x01(mosi_pad);
     miso_in <= to_x01(miso_pad);
 
-    -- Clients go to the port in that role; the port in the other role
-    -- gets junk (tx_valid held high) once junk_en is set. In phase 2 both
-    -- slaves get the host's reply.
-    a_m_tx_valid <= m_tx_valid   when swap = '0' else junk_en;
-    a_m_tx_data  <= m_tx_data    when swap = '0' else (others => '1');
-    a_m_tx_bits  <= m_tx_bits    when swap = '0' else (others => '1');
-    b_m_tx_valid <= m_tx_valid   when swap = '1' else junk_en;
-    b_m_tx_data  <= m_tx_data    when swap = '1' else (others => '1');
-    b_m_tx_bits  <= m_tx_bits    when swap = '1' else (others => '1');
-    m_tx_ready   <= a_m_tx_ready when swap = '0' else b_m_tx_ready;
+    -- Each port's client is the one of its role: the master client, the
+    -- slave client or, in phase 2, the host. A slave port gets tx_bits
+    -- all ones, which it must ignore.
+    a_tx_valid   <= host_wr   when host_en = '1' else m_tx_valid when swap = '0' else s_tx_valid;
+    a_tx_data    <= host_resp when host_en = '1' else m_tx_data  when swap = '0' else s_tx_data;
+    a_tx_bits    <= m_tx_bits when host_en = '0' and swap = '0' else (others => '1');
+    b_tx_valid   <= host_wr   when host_en = '1' else m_tx_valid when swap = '1' else s_tx_valid;
+    b_tx_data    <= host_resp when host_en = '1' else m_tx_data  when swap = '1' else s_tx_data;
+    b_tx_bits    <= m_tx_bits when host_en = '0' and swap = '1' else (others => '1');
+    m_tx_ready   <= a_tx_ready   when swap = '0' else b_tx_ready;
     m_rx_data    <= a_rx_data    when swap = '0' else b_rx_data;
     m_rx_valid   <= a_rx_valid   when swap = '0' else b_rx_valid;
 
-    a_s_tx_valid <= host_wr   when host_en = '1' else s_tx_valid when swap = '1' else junk_en;
-    a_s_tx_data  <= host_resp when host_en = '1' else s_tx_data  when swap = '1' else (others => '1');
-    b_s_tx_valid <= host_wr   when host_en = '1' else s_tx_valid when swap = '0' else junk_en;
-    b_s_tx_data  <= host_resp when host_en = '1' else s_tx_data  when swap = '0' else (others => '1');
     a_rx_ready   <= host_rd   when host_en = '1' else '1';
     b_rx_ready   <= host_rd   when host_en = '1' else '1';
-    s_tx_ready   <= b_s_tx_ready when swap = '0' else a_s_tx_ready;
+    s_tx_ready   <= b_tx_ready   when swap = '0' else a_tx_ready;
     s_rx_data    <= b_rx_data    when swap = '0' else a_rx_data;
     s_rx_bits    <= b_rx_bits    when swap = '0' else a_rx_bits;
     s_rx_valid   <= b_rx_valid   when swap = '0' else a_rx_valid;
@@ -409,7 +391,6 @@ begin
         rst <= '0';
         cycles(10);
         chk_on    <= '1';
-        junk_en   <= '1';
         iso_check <= '1';
 
         for ph in 0 to 1 loop
@@ -417,7 +398,6 @@ begin
                 -- strap A as slave too, check that nobody drives the bus,
                 -- then strap B as master
                 iso_check <= '0';
-                junk_en   <= '0';
                 strap_a   <= '1';
                 cycles(10);
                 assert sclk_pad = 'L' and cs_n_pad = 'H' and mosi_pad = 'L' and miso_pad = 'L'
@@ -428,7 +408,6 @@ begin
                 cycles(1);
                 strap_b <= '0';
                 cycles(10);
-                junk_en   <= '1';
                 iso_check <= '1';
                 report "TB: roles swapped, A is slave and B is master" severity note;
             end if;
@@ -501,7 +480,6 @@ begin
 
         -- phase 2: both ports slaves, frames of any length from the host
         iso_check <= '0';
-        junk_en   <= '0';
         strap_b   <= '1';
         cycles(10);
         host_rd <= '1';
@@ -524,7 +502,7 @@ begin
                 rnd(1, HOST_MAX, n);
             end if;
             rnd_bits(hbits);
-            assert a_s_tx_ready = '1' and b_s_tx_ready = '1'
+            assert a_tx_ready = '1' and b_tx_ready = '1'
                 report "host: frame " & integer'image(f) & " slaves not ready between frames" severity error;
             if f = HOST_URUN then
                 resp := (others => '0');
@@ -557,7 +535,7 @@ begin
                 cycles(SCK_DIV);
                 host_sclk <= '1';
                 hrx(HOST_MAX-1-i) := miso_in;
-                assert a_s_tx_ready = '0' and b_s_tx_ready = '0'
+                assert a_tx_ready = '0' and b_tx_ready = '0'
                     report "host: frame " & integer'image(f) & " tx_ready high during the frame" severity error;
                 cycles(SCK_DIV);
                 host_sclk <= '0';
@@ -820,7 +798,7 @@ begin
                     report "bus: MISO changed while SCK is high" severity error;
             end if;
 
-            -- pins driven by the right port, unused roles silent
+            -- pins driven by the right port
             if iso_check = '1' then
                 assert (sclk_pad = '0' or sclk_pad = '1') and (cs_n_pad = '0' or cs_n_pad = '1') and
                        (mosi_pad = '0' or mosi_pad = '1')
@@ -832,17 +810,21 @@ begin
                 if swap = '0' then
                     assert a_dbg_o = '0' and b_dbg_o = '1'
                         report "bus: dbg_o does not follow the strap" severity error;
-                    assert a_s_tx_ready = '0'
-                        report "bus: slave inside the master-strapped port A takes a reply" severity error;
-                    assert b_m_tx_ready = '0'
-                        report "bus: master inside the slave-strapped port B takes a word" severity error;
                 else
                     assert a_dbg_o = '1' and b_dbg_o = '0'
                         report "bus: dbg_o does not follow the strap" severity error;
-                    assert b_s_tx_ready = '0'
-                        report "bus: slave inside the master-strapped port B takes a reply" severity error;
-                    assert a_m_tx_ready = '0'
-                        report "bus: master inside the slave-strapped port A takes a word" severity error;
+                end if;
+            end if;
+
+            -- the master inside a slave-strapped port stays idle
+            if chk_on = '1' then
+                if strap_a = '1' then
+                    assert a_cs_n_o = '1' and a_sclk_o = '0'
+                        report "bus: master inside the slave-strapped port A runs a frame" severity error;
+                end if;
+                if strap_b = '1' then
+                    assert b_cs_n_o = '1' and b_sclk_o = '0'
+                        report "bus: master inside the slave-strapped port B runs a frame" severity error;
                 end if;
             end if;
 
