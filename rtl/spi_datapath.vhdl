@@ -27,7 +27,8 @@ entity spi_datapath is
         role_i     : in  std_logic;  -- 1 = master: sample miso_i
         miso_i     : in  std_logic;
         mosi_i     : in  std_logic;  -- synchronised to clk_i (spi_sync does it)
-        dout_o     : out std_logic;  -- to mosi_o and miso_o
+        mosi_o     : out std_logic;
+        miso_o     : out std_logic;
 
         tx_data_i  : in  std_logic_vector(WIDTH-1 downto 0);
         tx_bits_i  : in  std_logic_vector(CNT_BITS-1 downto 0);
@@ -125,7 +126,8 @@ begin
         end if;
     end process rx_buf_proc;
 
-    dout_o     <= tx_sh_reg(WIDTH-1);
+    mosi_o     <= tx_sh_reg(WIDTH-1);
+    miso_o     <= tx_sh_reg(WIDTH-1);
     done_o     <= '1' when bit_cnt_reg = wlen_reg or bit_cnt_reg = WIDTH else '0';
     rx_valid_o <= rx_valid_reg;
     rx_data_o  <= rx_data_reg;

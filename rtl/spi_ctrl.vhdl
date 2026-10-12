@@ -17,6 +17,7 @@ entity spi_ctrl is
         rst_i       : in  std_logic;
         role_req_i  : in  std_logic;  -- requested role (1 = master)
         role_ack_o  : out std_logic;  -- role in effect (1 = master)
+        role_o      : out std_logic;  -- the same, to the datapath
         cs_n_fall_i : in  std_logic;  -- slave edges (spi_edge)
         cs_n_rise_i : in  std_logic;
         sclk_rise_i : in  std_logic;
@@ -154,6 +155,7 @@ begin
     s_fall  <= '1' when state_reg = S_FRAME and sclk_fall_i = '1' else '0';
 
     role_ack_o <= role_reg;
+    role_o     <= role_reg;
     sclk_o     <= sclk_reg;
     sclk_oe    <= role_reg;
     cs_n_o     <= cs_n_reg;

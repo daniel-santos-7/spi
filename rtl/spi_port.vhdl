@@ -54,6 +54,7 @@ architecture rtl of spi_port is
     signal spi_port_edge_sclk_fall   : std_logic;
 
     signal spi_port_ctrl_role_ack    : std_logic;
+    signal spi_port_ctrl_role        : std_logic;
     signal spi_port_ctrl_sclk        : std_logic;
     signal spi_port_ctrl_sclk_oe     : std_logic;
     signal spi_port_ctrl_cs_n        : std_logic;
@@ -67,7 +68,8 @@ architecture rtl of spi_port is
     signal spi_port_ctrl_shift       : std_logic;
     signal spi_port_ctrl_load        : std_logic;
 
-    signal spi_port_datapath_dout    : std_logic;
+    signal spi_port_datapath_mosi    : std_logic;
+    signal spi_port_datapath_miso    : std_logic;
     signal spi_port_datapath_done    : std_logic;
     signal spi_port_datapath_rx_valid : std_logic;
     signal spi_port_datapath_rx_data : std_logic_vector(WIDTH-1 downto 0);
@@ -104,6 +106,7 @@ begin
         rst_i       => rst_i,
         role_req_i  => role_req_i,
         role_ack_o  => spi_port_ctrl_role_ack,
+        role_o      => spi_port_ctrl_role,
         cs_n_fall_i => spi_port_edge_cs_n_fall,
         cs_n_rise_i => spi_port_edge_cs_n_rise,
         sclk_rise_i => spi_port_edge_sclk_rise,
@@ -136,10 +139,11 @@ begin
         sample_i   => spi_port_ctrl_sample,
         shift_i    => spi_port_ctrl_shift,
         load_i     => spi_port_ctrl_load,
-        role_i     => spi_port_ctrl_role_ack,
+        role_i     => spi_port_ctrl_role,
         miso_i     => miso_i,
         mosi_i     => spi_port_sync_mosi,
-        dout_o     => spi_port_datapath_dout,
+        mosi_o     => spi_port_datapath_mosi,
+        miso_o     => spi_port_datapath_miso,
         tx_data_i  => tx_data_i,
         tx_bits_i  => tx_bits_i,
         done_o     => spi_port_datapath_done,
@@ -154,9 +158,9 @@ begin
     sclk_oe    <= spi_port_ctrl_sclk_oe;
     cs_n_o     <= spi_port_ctrl_cs_n;
     cs_n_oe    <= spi_port_ctrl_cs_n_oe;
-    mosi_o     <= spi_port_datapath_dout;
+    mosi_o     <= spi_port_datapath_mosi;
     mosi_oe    <= spi_port_ctrl_mosi_oe;
-    miso_o     <= spi_port_datapath_dout;
+    miso_o     <= spi_port_datapath_miso;
     miso_oe    <= spi_port_ctrl_miso_oe;
     tx_ready_o <= spi_port_ctrl_tx_ready;
     rx_data_o  <= spi_port_datapath_rx_data;
