@@ -25,10 +25,10 @@ end entity spi_sync;
 
 architecture rtl of spi_sync is
 
-    signal dbg_s  : std_logic_vector(1 downto 0);
-    signal sclk_s : std_logic_vector(1 downto 0);
-    signal cs_s   : std_logic_vector(1 downto 0);
-    signal mosi_s : std_logic_vector(1 downto 0);
+    signal dbg_reg  : std_logic_vector(1 downto 0);
+    signal sclk_reg : std_logic_vector(1 downto 0);
+    signal cs_n_reg : std_logic_vector(1 downto 0);
+    signal mosi_reg : std_logic_vector(1 downto 0);
 
 begin
 
@@ -36,22 +36,22 @@ begin
     begin
         if rising_edge(clk_i) then
             if rst_i = '1' then
-                dbg_s  <= (others => '0');
-                sclk_s <= (others => '0');
-                cs_s   <= (others => '1');
-                mosi_s <= (others => '0');
+                dbg_reg  <= (others => '0');
+                sclk_reg <= (others => '0');
+                cs_n_reg <= (others => '1');
+                mosi_reg <= (others => '0');
             else
-                dbg_s  <= dbg_s(0) & dbg_i;
-                sclk_s <= sclk_s(0) & sclk_i;
-                cs_s   <= cs_s(0) & cs_n_i;
-                mosi_s <= mosi_s(0) & mosi_i;
+                dbg_reg  <= dbg_reg(0) & dbg_i;
+                sclk_reg <= sclk_reg(0) & sclk_i;
+                cs_n_reg <= cs_n_reg(0) & cs_n_i;
+                mosi_reg <= mosi_reg(0) & mosi_i;
             end if;
         end if;
     end process sync_proc;
 
-    dbg_o  <= dbg_s(1);
-    sclk_o <= sclk_s(1);
-    cs_n_o <= cs_s(1);
-    mosi_o <= mosi_s(1);
+    dbg_o  <= dbg_reg(1);
+    sclk_o <= sclk_reg(1);
+    cs_n_o <= cs_n_reg(1);
+    mosi_o <= mosi_reg(1);
 
 end architecture rtl;
