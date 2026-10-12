@@ -27,13 +27,13 @@ entity spi_datapath is
         role_i     : in  std_logic;  -- 1 = master: sample miso_i
         miso_i     : in  std_logic;
         mosi_i     : in  std_logic;  -- synchronised to clk_i (spi_sync does it)
-        mosi_o     : out std_logic;
-        miso_o     : out std_logic;
 
         tx_data_i  : in  std_logic_vector(WIDTH-1 downto 0);
         tx_bits_i  : in  std_logic_vector(CNT_BITS-1 downto 0);
-        done_o     : out std_logic;
 
+        mosi_o     : out std_logic;
+        miso_o     : out std_logic;
+        done_o     : out std_logic;
         rx_data_o  : out std_logic_vector(WIDTH-1 downto 0);  -- word and count so far,
         rx_bits_o  : out std_logic_vector(CNT_BITS-1 downto 0)  -- final at stop_i
     );

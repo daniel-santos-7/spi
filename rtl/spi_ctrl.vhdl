@@ -16,22 +16,22 @@ entity spi_ctrl is
         clk_i       : in  std_logic;
         rst_i       : in  std_logic;
         role_req_i  : in  std_logic;  -- requested role (1 = master)
-        role_ack_o  : out std_logic;  -- role in effect (1 = master)
-        role_o      : out std_logic;  -- the same, to the datapath
         cs_n_fall_i : in  std_logic;  -- slave edges (spi_edge)
         cs_n_rise_i : in  std_logic;
         sclk_rise_i : in  std_logic;
         sclk_fall_i : in  std_logic;
         cs_pin_i    : in  std_logic;  -- CS# pin as is, for miso_oe
+        tx_valid_i  : in  std_logic;
+        done_i      : in  std_logic;
+        role_ack_o  : out std_logic;  -- role in effect (1 = master)
+        role_o      : out std_logic;  -- the same, to the datapath
         sclk_o      : out std_logic;
         sclk_oe     : out std_logic;
         cs_n_o      : out std_logic;
         cs_n_oe     : out std_logic;
         mosi_oe     : out std_logic;
         miso_oe     : out std_logic;
-        tx_valid_i  : in  std_logic;
         tx_ready_o  : out std_logic;
-        done_i      : in  std_logic;
         start_o     : out std_logic;
         stop_o      : out std_logic;
         sample_o    : out std_logic;
