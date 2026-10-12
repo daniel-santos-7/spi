@@ -66,7 +66,6 @@ begin
 
     cnt_end <= '1' when cnt_reg = SCK_DIV-1 else '0';
     load    <= tx_valid_i and ready_reg;
-    m_start <= load and role_reg;
 
     fsm_proc: process(clk_i)
     begin
@@ -143,9 +142,10 @@ begin
     end process cnt_proc;
 
     -- master strobes, qualified by state
-    m_stop <= '1' when state_reg = M_END else '0';
-    m_rise <= '1' when state_reg = M_SCK_LO and cnt_end = '1' else '0';
-    m_fall <= '1' when state_reg = M_SCK_HI and cnt_end = '1' else '0';
+    m_start <= '1' when state_reg = M_IDLE   and tx_valid_i = '1' else '0';
+    m_stop  <= '1' when state_reg = M_END    else '0';
+    m_rise  <= '1' when state_reg = M_SCK_LO and cnt_end    = '1' else '0';
+    m_fall  <= '1' when state_reg = M_SCK_HI and cnt_end    = '1' else '0';
 
     -- slave strobes, qualified by state the same way
     s_start <= '1' when state_reg = S_IDLE  and s_start_i = '1' else '0';
