@@ -50,7 +50,6 @@ architecture rtl of spi_ctrl is
     signal cs_n_reg     : std_logic;
     signal ready_reg    : std_logic;
     signal role_reg     : std_logic;
-    signal load         : std_logic;
     signal cnt_en_reg   : std_logic;
     signal cnt_end      : std_logic;
 
@@ -66,7 +65,6 @@ architecture rtl of spi_ctrl is
 begin
 
     cnt_end <= '1' when cnt_reg = SCK_DIV-1 else '0';
-    load    <= tx_valid_i and ready_reg;
 
     fsm_proc: process(clk_i)
     begin
@@ -167,6 +165,6 @@ begin
     stop_o     <= m_stop or s_stop;
     sample_o   <= m_rise or s_rise;  -- mode 0: sample on SCK rise
     shift_o    <= m_fall or s_fall;  -- and shift on SCK fall
-    load_o     <= load;
+    load_o     <= tx_valid_i and ready_reg;
 
 end architecture rtl;
