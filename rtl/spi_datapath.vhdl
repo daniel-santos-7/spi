@@ -24,8 +24,11 @@ entity spi_datapath is
         fall_i     : in  std_logic;
         load_i     : in  std_logic;
 
-        din_i      : in  std_logic;
-        dout_o     : out std_logic;
+        dbg_i      : in  std_logic;
+        miso_i     : in  std_logic;
+        mosi_i     : in  std_logic;  -- synchronised to clk_i (spi_sync does it)
+        mosi_o     : out std_logic;
+        miso_o     : out std_logic;
 
         tx_data_i  : in  std_logic_vector(WIDTH-1 downto 0);
         tx_bits_i  : in  std_logic_vector(CNT_BITS-1 downto 0);
@@ -45,6 +48,7 @@ architecture rtl of spi_datapath is
 
     signal tx_sh    : std_logic_vector(WIDTH-1 downto 0);
     signal rx_sh    : std_logic_vector(WIDTH-1 downto 0);
+    signal din      : std_logic;
 
     signal rx_valid : std_logic;
     signal rx_data  : std_logic_vector(WIDTH-1 downto 0);
@@ -54,6 +58,8 @@ begin
 
     assert WIDTH >= 2 report "SPI datapath: WIDTH must be at least 2." severity failure;
     assert 2**CNT_BITS > WIDTH report "SPI datapath: CNT_BITS too small to count WIDTH." severity failure;
+
+    din <= mosi_i when dbg_i = '1' else miso_i;
 
     cnt_proc: process(clk_i)
     begin
@@ -100,7 +106,7 @@ begin
             elsif start_i = '1' then
                 rx_sh <= (others => '0');
             elsif rise_i = '1' and bit_cnt /= WIDTH then
-                rx_sh <= rx_sh(WIDTH-2 downto 0) & din_i;
+                rx_sh <= rx_sh(WIDTH-2 downto 0) & din;
             end if;
         end if;
     end process rx_proc;
@@ -120,7 +126,8 @@ begin
         end if;
     end process rx_buf_proc;
 
-    dout_o     <= tx_sh(WIDTH-1);
+    mosi_o     <= tx_sh(WIDTH-1);
+    miso_o     <= tx_sh(WIDTH-1);
     done_o     <= '1' when bit_cnt = wlen or bit_cnt = WIDTH else '0';
     rx_valid_o <= rx_valid;
     rx_data_o  <= rx_data;

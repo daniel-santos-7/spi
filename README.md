@@ -16,7 +16,7 @@ Dual-role SPI in VHDL-93: one set of pins and one shift core, used either as a m
 rtl/spi_sync.vhdl     spi_port input synchronisers (two flip-flops each)
 rtl/spi_datapath.vhdl datapath: shift registers, bit count, frame length and receive buffer
 rtl/spi_ctrl.vhdl     control: master SCK/CS# FSM, slave edge detection, transmit ready
-rtl/spi_port.vhdl     pins, role select, control and datapath
+rtl/spi_port.vhdl     structural top: instantiates spi_sync, spi_ctrl and spi_datapath
 tbs/tb_spi_port.vhdl  self-checking testbench: two ports on one bus
 Makefile              GHDL analysis, simulation and Yosys synthesis
 ```
@@ -40,9 +40,9 @@ The input `dbg_i` picks the role:
 | 0 | master | driven (`_oe` = 1) | input |
 | 1 | slave | inputs | driven while `CS#` is low, released otherwise |
 
-`spi_port` holds one `spi_ctrl` and one `spi_datapath` behind one client interface shared by both roles: transmit (`tx_valid_i`, `tx_ready_o`, `tx_data_i`, `tx_bits_i`) and receive (`rx_valid_o`, `rx_ready_i`, `rx_data_o`, `rx_bits_o`). `dbg` selects the strobes that drive the datapath (the master's or the slave's, inside `spi_ctrl`) and its data in (`miso_i` or the synchronised MOSI). `tx_bits_i` only matters as master; a slave always sends up to `WIDTH` bits. The datapath's output bit goes to both `mosi_o` and `miso_o`; only the one whose `_oe` is set reaches the pin. A word left in the receive buffer when `dbg` changes is still delivered on `rx_*`. A transmit word written and not yet sent when `dbg` changes goes out in the other role's next frame.
+`spi_port` is structural only: it instantiates `spi_sync`, `spi_ctrl` and `spi_datapath` and wires them to the pins, with no logic of its own, behind one client interface shared by both roles: transmit (`tx_valid_i`, `tx_ready_o`, `tx_data_i`, `tx_bits_i`) and receive (`rx_valid_o`, `rx_ready_i`, `rx_data_o`, `rx_bits_o`). `dbg` selects the strobes that drive the datapath (the master's or the slave's, in `spi_ctrl`), the datapath's data in (`miso_i` or the synchronised MOSI, in `spi_datapath`) and the pin enables (in `spi_ctrl`). `tx_bits_i` only matters as master; a slave always sends up to `WIDTH` bits. The datapath drives the same bit on `mosi_o` and `miso_o`; only the one whose `_oe` is set reaches the pin. A word left in the receive buffer when `dbg` changes is still delivered on `rx_*`. A transmit word written and not yet sent when `dbg` changes goes out in the other role's next frame.
 
-Every asynchronous input goes through a two-flip-flop synchroniser, all in `spi_sync`: `dbg_i`, and SCK, `CS#` and MOSI on the way to the slave. The master needs none, since it only samples MISO at its own SCK edge. `dbg_o` gives the synchronised strap back to the client. It is a strap, not a run-time switch: change it only while the master is idle, no slave frame is in progress and no slave reply is written but not yet sent. While it is 1, `tx_valid_i` only loads the slave's reply and never starts a master frame. While it is 0, the slave sees `CS#` as high, so master traffic never reaches it.
+Every asynchronous input goes through a two-flip-flop synchroniser, all in `spi_sync`: `dbg_i`, and SCK, `CS#` and MOSI on the way to the slave. The master needs none, since it only samples MISO at its own SCK edge. `dbg_o` gives the synchronised strap back to the client. It is a strap, not a run-time switch: change it only while the master is idle, no slave frame is in progress and no slave reply is written but not yet sent. While it is 1, `tx_valid_i` only loads the slave's reply and never starts a master frame. While it is 0, the slave's edge detection follows the master's own `CS#` and SCK, but `spi_ctrl` passes on only the master's strobes, so master traffic never reaches the slave logic.
 
 ### Master role (`dbg_i` = 0)
 
@@ -68,7 +68,7 @@ Neither side knows about commands: what the words mean, and whether a frame of t
 
 ## spi_datapath
 
-The registers that hold and move the data, driven by the control's one-cycle strobes and write (`load_i`). It decides nothing about frames; it reports the bit count back as status (`done_o`). It does not know which side of the link it is on.
+The registers that hold and move the data, driven by the control's one-cycle strobes and write (`load_i`). It decides nothing about frames; it reports the bit count back as status (`done_o`). The only thing it knows about the role is which pin feeds the receive register: `miso_i` as master, the synchronised MOSI as slave (`dbg_i`). Its output bit goes to both `mosi_o` and `miso_o`.
 
 - `start_i` (`CS#` falls): clears the receive register and the count.
 - `rise_i` (SCK rises): shifts `din_i` into the receive register and counts the bit, until the count reaches `WIDTH`; later bits are ignored.
@@ -81,7 +81,7 @@ The receive buffer holds one word, with a ready/valid handshake on the output. W
 
 ## spi_ctrl
 
-Produces the four strobes and the client write for the role `dbg_i` selects, and owns the transmit handshake: `ready_reg` (`tx_ready_o`) is high between frames, cleared by `start` and set again by `stop`, and a write (`load_o`) is `tx_valid_i` and `ready_reg`; a second write before a frame replaces the first. As master, an FSM (`IDLE`, `SCK_LO`, `SCK_HI`, `STOP`) generates SCK and `CS#` from `SCK_DIV` and times the strobes to its own clock (so no edge detection is involved). A write in `IDLE` starts a frame in that cycle (the datapath takes the word in the same cycle), and the frame ends at the falling edge where the datapath's `done_i` is high. Its `stop` comes in the `STOP` cycle, the first one with `CS#` high, and a write never starts a frame while `dbg_i` is 1. As slave, two registers detect the edges of the synchronised SCK and `CS#`.
+Produces the four strobes and the client write for the role `dbg_i` selects, drives the pin enables (`sclk_oe`, `cs_n_oe` and `mosi_oe` as master; `miso_oe` as slave while the `CS#` pin, unsynchronised, is low) and `dbg_o`, and owns the transmit handshake: `ready_reg` (`tx_ready_o`) is high between frames, cleared by `start` and set again by `stop`, and a write (`load_o`) is `tx_valid_i` and `ready_reg`; a second write before a frame replaces the first. As master, an FSM (`IDLE`, `SCK_LO`, `SCK_HI`, `STOP`) generates SCK and `CS#` from `SCK_DIV` and times the strobes to its own clock (so no edge detection is involved). A write in `IDLE` starts a frame in that cycle (the datapath takes the word in the same cycle), and the frame ends at the falling edge where the datapath's `done_i` is high. Its `stop` comes in the `STOP` cycle, the first one with `CS#` high, and a write never starts a frame while `dbg_i` is 1. As slave, two registers detect the edges of the synchronised SCK and `CS#`.
 
 ## License
 

@@ -16,10 +16,16 @@ entity spi_ctrl is
         clk_i      : in  std_logic;
         rst_i      : in  std_logic;
         dbg_i      : in  std_logic;
+        dbg_o      : out std_logic;
         sclk_i     : in  std_logic;  -- sclk_i and cs_n_i must already be
-        cs_n_i     : in  std_logic;  -- synchronised to clk_i (spi_port does it)
+        cs_n_i     : in  std_logic;  -- synchronised to clk_i (spi_sync does it)
+        cs_pin_i   : in  std_logic;  -- CS# pin as is, for miso_oe
         sclk_o     : out std_logic;
+        sclk_oe    : out std_logic;
         cs_n_o     : out std_logic;
+        cs_n_oe    : out std_logic;
+        mosi_oe    : out std_logic;
+        miso_oe    : out std_logic;
         tx_valid_i : in  std_logic;
         tx_ready_o : out std_logic;
         done_i     : in  std_logic;
@@ -158,8 +164,13 @@ begin
         end if;
     end process ready_proc;
 
+    dbg_o      <= dbg_i;
     sclk_o     <= sclk;
+    sclk_oe    <= not dbg_i;
     cs_n_o     <= cs_n;
+    cs_n_oe    <= not dbg_i;
+    mosi_oe    <= not dbg_i;
+    miso_oe    <= dbg_i and not cs_pin_i;
     tx_ready_o <= ready_reg;
     start_o    <= start_sel;
     stop_o     <= stop_sel;

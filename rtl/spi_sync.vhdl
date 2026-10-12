@@ -14,7 +14,7 @@ entity spi_sync is
         rst_i  : in  std_logic;
         dbg_i  : in  std_logic;  -- role strap
         sclk_i : in  std_logic;
-        cs_n_i : in  std_logic;  -- CS# as the slave should see it
+        cs_n_i : in  std_logic;
         mosi_i : in  std_logic;
         dbg_o  : out std_logic;  -- outputs: inputs in the clk_i domain,
         sclk_o : out std_logic;  -- two cycles later
