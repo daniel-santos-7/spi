@@ -1,7 +1,7 @@
 ----------------------------------------------------------------------
 -- Leaf project
 -- developed by: Daniel Santos
--- module: SPI datapath (shift registers, bit count, receive buffer)
+-- module: SPI datapath (shift registers, bit count, frame length)
 -- 2026
 ----------------------------------------------------------------------
 
@@ -34,10 +34,8 @@ entity spi_datapath is
         tx_bits_i  : in  std_logic_vector(CNT_BITS-1 downto 0);
         done_o     : out std_logic;
 
-        rx_ready_i : in  std_logic;
-        rx_valid_o : out std_logic;
-        rx_data_o  : out std_logic_vector(WIDTH-1 downto 0);
-        rx_bits_o  : out std_logic_vector(CNT_BITS-1 downto 0)
+        rx_data_o  : out std_logic_vector(WIDTH-1 downto 0);  -- word and count so far,
+        rx_bits_o  : out std_logic_vector(CNT_BITS-1 downto 0)  -- final at stop_i
     );
 end entity spi_datapath;
 
@@ -51,10 +49,6 @@ architecture rtl of spi_datapath is
     signal din          : std_logic;
     signal dout         : std_logic;
     signal done         : std_logic;
-
-    signal rx_valid_reg : std_logic;
-    signal rx_data_reg  : std_logic_vector(WIDTH-1 downto 0);
-    signal rx_bits_reg  : std_logic_vector(CNT_BITS-1 downto 0);
 
 begin
 
@@ -93,26 +87,10 @@ begin
         end if;
     end process rx_proc;
 
-    rx_buf_proc: process(clk_i)
-    begin
-        if rising_edge(clk_i) then
-            if rst_i = '1' then
-                rx_valid_reg <= '0';
-                rx_data_reg  <= (others => '0');
-                rx_bits_reg  <= (others => '0');
-            elsif rx_valid_reg = '0' or rx_ready_i = '1' then
-                rx_valid_reg <= stop_i;
-                rx_data_reg  <= rx_sh_reg;
-                rx_bits_reg  <= std_logic_vector(bit_cnt_reg);
-            end if;
-        end if;
-    end process rx_buf_proc;
-
     mosi_o     <= dout;
     miso_o     <= dout;
     done_o     <= done;
-    rx_valid_o <= rx_valid_reg;
-    rx_data_o  <= rx_data_reg;
-    rx_bits_o  <= rx_bits_reg;
+    rx_data_o  <= rx_sh_reg;
+    rx_bits_o  <= std_logic_vector(bit_cnt_reg);
 
 end architecture rtl;

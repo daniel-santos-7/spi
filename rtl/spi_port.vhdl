@@ -71,9 +71,12 @@ architecture rtl of spi_port is
     signal spi_port_datapath_mosi    : std_logic;
     signal spi_port_datapath_miso    : std_logic;
     signal spi_port_datapath_done    : std_logic;
-    signal spi_port_datapath_rx_valid : std_logic;
     signal spi_port_datapath_rx_data : std_logic_vector(WIDTH-1 downto 0);
     signal spi_port_datapath_rx_bits : std_logic_vector(CNT_BITS-1 downto 0);
+
+    signal spi_port_rx_buf_valid     : std_logic;
+    signal spi_port_rx_buf_data      : std_logic_vector(WIDTH-1 downto 0);
+    signal spi_port_rx_buf_bits      : std_logic_vector(CNT_BITS-1 downto 0);
 
 begin
 
@@ -147,10 +150,23 @@ begin
         tx_data_i  => tx_data_i,
         tx_bits_i  => tx_bits_i,
         done_o     => spi_port_datapath_done,
-        rx_ready_i => rx_ready_i,
-        rx_valid_o => spi_port_datapath_rx_valid,
         rx_data_o  => spi_port_datapath_rx_data,
         rx_bits_o  => spi_port_datapath_rx_bits
+    );
+
+    spi_port_rx_buf: entity work.spi_rx_buf generic map (
+        WIDTH    => WIDTH,
+        CNT_BITS => CNT_BITS
+    ) port map (
+        clk_i    => clk_i,
+        rst_i    => rst_i,
+        valid_i  => spi_port_ctrl_stop,
+        data_i   => spi_port_datapath_rx_data,
+        bits_i   => spi_port_datapath_rx_bits,
+        ready_i  => rx_ready_i,
+        valid_o  => spi_port_rx_buf_valid,
+        data_o   => spi_port_rx_buf_data,
+        bits_o   => spi_port_rx_buf_bits
     );
 
     role_ack_o <= spi_port_ctrl_role_ack;
@@ -163,8 +179,8 @@ begin
     miso_o     <= spi_port_datapath_miso;
     miso_oe    <= spi_port_ctrl_miso_oe;
     tx_ready_o <= spi_port_ctrl_tx_ready;
-    rx_data_o  <= spi_port_datapath_rx_data;
-    rx_bits_o  <= spi_port_datapath_rx_bits;
-    rx_valid_o <= spi_port_datapath_rx_valid;
+    rx_data_o  <= spi_port_rx_buf_data;
+    rx_bits_o  <= spi_port_rx_buf_bits;
+    rx_valid_o <= spi_port_rx_buf_valid;
 
 end architecture rtl;
