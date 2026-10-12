@@ -50,6 +50,7 @@ architecture rtl of spi_datapath is
     signal rx_sh_reg    : std_logic_vector(WIDTH-1 downto 0);
     signal din          : std_logic;
     signal dout         : std_logic;
+    signal done         : std_logic;
 
     signal rx_valid_reg : std_logic;
     signal rx_data_reg  : std_logic_vector(WIDTH-1 downto 0);
@@ -62,53 +63,32 @@ begin
 
     din  <= miso_i when role_i = '1' else mosi_i;
     dout <= tx_sh_reg(WIDTH-1);
-
-    cnt_proc: process(clk_i)
-    begin
-        if rising_edge(clk_i) then
-            if rst_i = '1' then
-                bit_cnt_reg <= (others => '0');
-            elsif start_i = '1' then
-                bit_cnt_reg <= (others => '0');
-            elsif sample_i = '1' and bit_cnt_reg /= WIDTH then
-                bit_cnt_reg <= bit_cnt_reg + 1;
-            end if;
-        end if;
-    end process cnt_proc;
+    done <= '1' when bit_cnt_reg = wlen_reg or bit_cnt_reg = WIDTH else '0';
 
     tx_proc: process(clk_i)
     begin
         if rising_edge(clk_i) then
             if rst_i = '1' or (stop_i = '1' and bit_cnt_reg /= 0) then
                 tx_sh_reg <= (others => '0');
+                wlen_reg  <= (others => '0');
             elsif load_i = '1' then
                 tx_sh_reg <= tx_data_i;
+                wlen_reg  <= unsigned(tx_bits_i);
             elsif shift_i = '1' then
                 tx_sh_reg <= tx_sh_reg(WIDTH-2 downto 0) & '0';
             end if;
         end if;
     end process tx_proc;
 
-    len_proc: process(clk_i)
-    begin
-        if rising_edge(clk_i) then
-            if rst_i = '1' then
-                wlen_reg <= (others => '0');
-            elsif load_i = '1' then
-                wlen_reg <= unsigned(tx_bits_i);
-            end if;
-        end if;
-    end process len_proc;
-
     rx_proc: process(clk_i)
     begin
         if rising_edge(clk_i) then
-            if rst_i = '1' then
-                rx_sh_reg <= (others => '0');
-            elsif start_i = '1' then
-                rx_sh_reg <= (others => '0');
+            if rst_i = '1' or start_i = '1' then
+                bit_cnt_reg <= (others => '0');
+                rx_sh_reg   <= (others => '0');
             elsif sample_i = '1' and bit_cnt_reg /= WIDTH then
-                rx_sh_reg <= rx_sh_reg(WIDTH-2 downto 0) & din;
+                bit_cnt_reg <= bit_cnt_reg + 1;
+                rx_sh_reg   <= rx_sh_reg(WIDTH-2 downto 0) & din;
             end if;
         end if;
     end process rx_proc;
@@ -130,7 +110,7 @@ begin
 
     mosi_o     <= dout;
     miso_o     <= dout;
-    done_o     <= '1' when bit_cnt_reg = wlen_reg or bit_cnt_reg = WIDTH else '0';
+    done_o     <= done;
     rx_valid_o <= rx_valid_reg;
     rx_data_o  <= rx_data_reg;
     rx_bits_o  <= rx_bits_reg;

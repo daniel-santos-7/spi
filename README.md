@@ -74,7 +74,7 @@ The registers that hold and move the data, driven by the control's one-cycle str
 - `start_i` (`CS#` falls): clears the receive register and the count.
 - `sample_i` (SCK rises, in mode 0): shifts `din` (the selected input pin) into the receive register and counts the bit, until the count reaches `WIDTH`; later bits are ignored.
 - `shift_i` (SCK falls, in mode 0): shifts the transmit register, with zeros shifted in, so its MSB, on `mosi_o` and `miso_o`, shows the next bit, and zeros after the `WIDTH`-th.
-- `stop_i` (`CS#` rises): offers the word and its count to the receive buffer, and clears the transmit register if the frame had at least one bit (the count only returns to 0 at `start_i`), so an underrun after a shorter frame sends zeros, not what that frame left. After an empty frame the word written before it stays for the next one.
+- `stop_i` (`CS#` rises): offers the word and its count to the receive buffer, and clears the transmit register if the frame had at least one bit (the count only returns to 0 at `start_i`), so an underrun after a shorter frame sends zeros, not what that frame left. `wlen_reg` is cleared with it (it shares the process); harmless, since every master frame loads it again. After an empty frame the word written before it stays for the next one.
 - `load_i` (a client write): copies `tx_data_i` into the transmit register and `tx_bits_i` into `wlen_reg`.
 - `done_o`: the count has reached `wlen_reg` or `WIDTH`, so a length of 0 or above `WIDTH` gives `WIDTH` bits. Only the master control uses it, to end its frame.
 
