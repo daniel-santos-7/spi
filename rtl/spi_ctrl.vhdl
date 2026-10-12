@@ -15,8 +15,9 @@ entity spi_ctrl is
     port (
         clk_i      : in  std_logic;
         rst_i      : in  std_logic;
-        dbg_i      : in  std_logic;  -- requested role (1 = master), synchronised
-        role_o     : out std_logic;  -- role in effect (1 = master)
+        role_req_i : in  std_logic;  -- requested role (1 = master)
+        role_ack_o : out std_logic;  -- role in effect (1 = master), to the pin
+        role_o     : out std_logic;  -- the same, to the datapath
         sclk_i     : in  std_logic;  -- sclk_i and cs_n_i must already be
         cs_n_i     : in  std_logic;  -- synchronised to clk_i (spi_sync does it)
         cs_pin_i   : in  std_logic;  -- CS# pin as is, for miso_oe
@@ -88,7 +89,7 @@ begin
                         if s_start = '1' then
                             state_reg <= SLAVE;
                             ready_reg <= '0';
-                        elsif dbg_i = '1' then
+                        elsif role_req_i = '1' then
                             state_reg <= MASTER;
                             role_reg  <= '1';
                         end if;
@@ -103,7 +104,7 @@ begin
                             cs_n_reg   <= '0';
                             cnt_en_reg <= '1';
                             ready_reg  <= '0';
-                        elsif dbg_i = '0' then
+                        elsif role_req_i = '0' then
                             state_reg <= IDLE;
                             role_reg  <= '0';
                         end if;
@@ -171,6 +172,7 @@ begin
     s_rise  <= sclk_i and not sclk_dly_reg and not cs_n_i;
     s_fall  <= sclk_dly_reg and not sclk_i and not cs_n_i;
 
+    role_ack_o <= role_reg;
     role_o     <= role_reg;
     sclk_o     <= sclk_reg;
     sclk_oe    <= role_reg;

@@ -17,7 +17,8 @@ entity spi_port is
     port (
         clk_i      : in  std_logic;
         rst_i      : in  std_logic;
-        dbg_i      : in  std_logic;
+        role_req_i : in  std_logic;  -- synchronous to clk_i
+        role_ack_o : out std_logic;
         sclk_i     : in  std_logic;
         sclk_o     : out std_logic;
         sclk_oe    : out std_logic;
@@ -43,7 +44,6 @@ end entity spi_port;
 
 architecture rtl of spi_port is
 
-    signal dbg      : std_logic;
     signal role     : std_logic;
     signal s_sclk   : std_logic;
     signal s_cs_n   : std_logic;
@@ -61,11 +61,9 @@ begin
     spi_port_sync: entity work.spi_sync port map (
         clk_i  => clk_i,
         rst_i  => rst_i,
-        dbg_i  => dbg_i,
         sclk_i => sclk_i,
         cs_n_i => cs_n_i,
         mosi_i => mosi_i,
-        dbg_o  => dbg,
         sclk_o => s_sclk,
         cs_n_o => s_cs_n,
         mosi_o => s_mosi
@@ -76,7 +74,8 @@ begin
     ) port map (
         clk_i      => clk_i,
         rst_i      => rst_i,
-        dbg_i      => dbg,
+        role_req_i => role_req_i,
+        role_ack_o => role_ack_o,
         role_o     => role,
         sclk_i     => s_sclk,
         cs_n_i     => s_cs_n,

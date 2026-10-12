@@ -8,7 +8,8 @@
 -- Two spi_port instances, A and B, share one set of pads modelled as
 -- resolved signals with pull resistors (CS# up, SCK/MOSI/MISO down).
 -- A port is a slave out of reset and becomes a master while its strap
--- (dbg_i) is 1, switching only between frames.
+-- (role_req_i) is 1, switching only between frames; role_ack_o shows
+-- the role in effect.
 -- Phase 0 straps A as master and B as slave; phase 1 swaps the roles.
 -- In one full phase 0 frame both straps flip in the middle of the
 -- frame and flip back before it ends: neither port may change role, so
@@ -44,8 +45,9 @@
 -- words the master receives (the first tx_bits bits of the reply),
 -- CS# high time, SCK phases, MOSI/MISO changing only while SCK is low,
 -- frame length, pad contention, pin release, that SCK/CS#/MOSI are
--- driven by the master only, that a slave port ignores tx_bits (driven
--- all ones).
+-- driven by the master only, that role_ack_o follows the strap and
+-- changes only while CS# is high, that a slave port ignores tx_bits
+-- (driven all ones).
 --
 ----------------------------------------------------------------------
 
@@ -145,6 +147,7 @@ architecture sim of tb_spi_port is
     signal miso_in  : std_logic;
 
     -- port A
+    signal a_role_ack   : std_logic;
     signal a_sclk_o     : std_logic;
     signal a_sclk_oe    : std_logic;
     signal a_cs_n_o     : std_logic;
@@ -163,6 +166,7 @@ architecture sim of tb_spi_port is
     signal a_rx_valid   : std_logic;
 
     -- port B
+    signal b_role_ack   : std_logic;
     signal b_sclk_o     : std_logic;
     signal b_sclk_oe    : std_logic;
     signal b_cs_n_o     : std_logic;
@@ -229,7 +233,8 @@ begin
     ) port map (
         clk_i      => clk,
         rst_i      => rst,
-        dbg_i      => strap_a,
+        role_req_i => strap_a,
+        role_ack_o => a_role_ack,
         sclk_i     => sclk_in,
         sclk_o     => a_sclk_o,
         sclk_oe    => a_sclk_oe,
@@ -259,7 +264,8 @@ begin
     ) port map (
         clk_i      => clk,
         rst_i      => rst,
-        dbg_i      => strap_b,
+        role_req_i => strap_b,
+        role_ack_o => b_role_ack,
         sclk_i     => sclk_in,
         sclk_o     => b_sclk_o,
         sclk_oe    => b_sclk_oe,
@@ -408,6 +414,8 @@ begin
                 cycles(10);
                 assert sclk_pad = 'L' and cs_n_pad = 'H' and mosi_pad = 'L' and miso_pad = 'L'
                     report "TB: pins still driven with both ports strapped as slave" severity error;
+                assert a_role_ack = '0' and b_role_ack = '0'
+                    report "TB: role_ack does not follow the strap" severity error;
                 swap <= '1';
                 cycles(1);
                 strap_b <= '1';
@@ -751,8 +759,12 @@ begin
         variable lo_cnt : natural := 0;
         variable hi_cnt : natural := CS_MIN;
         variable frame  : natural := 0;
+        variable a_ack  : std_logic;
+        variable b_ack  : std_logic;
     begin
         wait until rising_edge(clk) and chk_on = '1';
+        a_ack  := a_role_ack;
+        b_ack  := b_role_ack;
         sclk_p := sclk_in;
         cs_p   := cs_n_in;
         mosi_p := mosi_in;
@@ -827,7 +839,13 @@ begin
             assert a_sclk_oe = a_cs_n_oe and a_mosi_oe = a_cs_n_oe and
                    b_sclk_oe = b_cs_n_oe and b_mosi_oe = b_cs_n_oe
                 report "bus: SCK, CS# and MOSI enables differ" severity error;
+            -- the role changes only between frames
+            assert (a_role_ack = a_ack and b_role_ack = b_ack) or cs_n_in = '1'
+                report "bus: role_ack changed while CS# is low" severity error;
             if iso_check = '1' then
+                assert (a_role_ack = '1' and b_role_ack = '0' and swap = '0') or
+                       (a_role_ack = '0' and b_role_ack = '1' and swap = '1')
+                    report "bus: role_ack does not follow the strap" severity error;
                 assert (sclk_pad = '0' or sclk_pad = '1') and (cs_n_pad = '0' or cs_n_pad = '1') and
                        (mosi_pad = '0' or mosi_pad = '1')
                     report "bus: master pins not driven" severity error;
@@ -848,6 +866,8 @@ begin
             cs_p   := cs_n_in;
             mosi_p := mosi_in;
             miso_p := miso_in;
+            a_ack  := a_role_ack;
+            b_ack  := b_role_ack;
         end loop;
     end process bus_mon_proc;
 
