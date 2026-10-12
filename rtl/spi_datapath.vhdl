@@ -25,7 +25,7 @@ entity spi_datapath is
         load_i     : in  std_logic;
 
         role_i     : in  std_logic;  -- 1 = master: sample miso_i
-        miso_i     : in  std_logic;
+        miso_i     : in  std_logic;  -- not synchronised: master only, timed by our own SCK
         mosi_i     : in  std_logic;  -- synchronised to clk_i (spi_sync does it)
 
         data_i     : in  std_logic_vector(WIDTH-1 downto 0);
