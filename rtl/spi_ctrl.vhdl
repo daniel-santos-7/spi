@@ -32,6 +32,7 @@ entity spi_ctrl is
         mosi_oe     : out std_logic;
         miso_oe     : out std_logic;
         tx_ready_o  : out std_logic;
+        rx_valid_o  : out std_logic;  -- word received, to the receive buffer
         start_o     : out std_logic;
         stop_o      : out std_logic;
         sample_o    : out std_logic;
@@ -163,6 +164,7 @@ begin
     mosi_oe    <= role_reg;
     miso_oe    <= not (cs_pin_i or role_reg);
     tx_ready_o <= ready_reg;
+    rx_valid_o <= m_stop or s_stop;
     start_o    <= m_start or s_start;
     stop_o     <= m_stop or s_stop;
     sample_o   <= m_rise or s_rise;  -- mode 0: sample on SCK rise

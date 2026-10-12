@@ -62,6 +62,7 @@ architecture rtl of spi_port is
     signal spi_port_ctrl_mosi_oe     : std_logic;
     signal spi_port_ctrl_miso_oe     : std_logic;
     signal spi_port_ctrl_tx_ready    : std_logic;
+    signal spi_port_ctrl_rx_valid    : std_logic;
     signal spi_port_ctrl_start       : std_logic;
     signal spi_port_ctrl_stop        : std_logic;
     signal spi_port_ctrl_sample      : std_logic;
@@ -124,6 +125,7 @@ begin
         mosi_oe     => spi_port_ctrl_mosi_oe,
         miso_oe     => spi_port_ctrl_miso_oe,
         tx_ready_o  => spi_port_ctrl_tx_ready,
+        rx_valid_o  => spi_port_ctrl_rx_valid,
         start_o     => spi_port_ctrl_start,
         stop_o      => spi_port_ctrl_stop,
         sample_o    => spi_port_ctrl_sample,
@@ -160,7 +162,7 @@ begin
     ) port map (
         clk_i    => clk_i,
         rst_i    => rst_i,
-        valid_i  => spi_port_ctrl_stop,
+        valid_i  => spi_port_ctrl_rx_valid,
         data_i   => spi_port_datapath_rx_data,
         bits_i   => spi_port_datapath_rx_bits,
         ready_i  => rx_ready_i,
