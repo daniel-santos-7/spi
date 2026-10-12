@@ -16,7 +16,7 @@ entity spi_ctrl is
         clk_i      : in  std_logic;
         rst_i      : in  std_logic;
         dbg_i      : in  std_logic;  -- requested role, synchronised
-        dbg_o      : out std_logic;  -- role in effect, changed only in IDLE
+        dbg_o      : out std_logic;  -- role in effect, changed only in IDLE/SLV_IDLE
         role_o     : out std_logic;
         sclk_i     : in  std_logic;  -- sclk_i and cs_n_i must already be
         cs_n_i     : in  std_logic;  -- synchronised to clk_i (spi_sync does it)
@@ -40,7 +40,7 @@ end entity spi_ctrl;
 
 architecture rtl of spi_ctrl is
 
-    type state_t is (IDLE, SCK_LO, SCK_HI, STOP, SLAVE);
+    type state_t is (IDLE, SCK_LO, SCK_HI, STOP, SLV_IDLE, SLAVE);
 
     signal state_reg    : state_t;
     signal cnt_reg      : natural range 0 to SCK_DIV;
@@ -89,11 +89,9 @@ begin
                             cs_n_reg   <= '0';
                             cnt_en_reg <= '1';
                             ready_reg  <= '0';
-                        elsif role_reg = '1' and s_start = '1' then
-                            state_reg <= SLAVE;
-                            ready_reg <= '0';
-                        else
-                            role_reg <= dbg_i;
+                        elsif dbg_i = '1' then
+                            state_reg <= SLV_IDLE;
+                            role_reg  <= '1';
                         end if;
                     when SCK_LO =>
                         if cnt_end = '1' then
@@ -116,9 +114,17 @@ begin
                         state_reg <= IDLE;
                         stop_reg  <= '0';
                         ready_reg <= '1';
+                    when SLV_IDLE =>
+                        if s_start = '1' then
+                            state_reg <= SLAVE;
+                            ready_reg <= '0';
+                        elsif dbg_i = '0' then
+                            state_reg <= IDLE;
+                            role_reg  <= '0';
+                        end if;
                     when SLAVE =>
                         if s_stop = '1' then
-                            state_reg <= IDLE;
+                            state_reg <= SLV_IDLE;
                             ready_reg <= '1';
                         end if;
                 end case;
