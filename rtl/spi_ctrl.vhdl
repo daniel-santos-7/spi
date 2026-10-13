@@ -57,23 +57,23 @@ architecture rtl of spi_ctrl is
     -- the SCK divider counts 0 to SCK_DIV-1
     constant CNT_W : positive := bits_for(SCK_DIV-1);
 
-    signal state_reg    : state_t;
-    signal cnt_reg      : unsigned(CNT_W-1 downto 0);
-    signal sclk_reg     : std_logic;
-    signal cs_n_reg     : std_logic;
-    signal ready_reg    : std_logic;
-    signal role_reg     : std_logic;
-    signal cnt_en_reg   : std_logic;
-    signal cnt_end      : std_logic;
+    signal state_reg  : state_t;
+    signal cnt_reg    : unsigned(CNT_W-1 downto 0);
+    signal sclk_reg   : std_logic;
+    signal cs_n_reg   : std_logic;
+    signal ready_reg  : std_logic;
+    signal role_reg   : std_logic;
+    signal cnt_en_reg : std_logic;
+    signal cnt_end    : std_logic;
 
-    signal m_start      : std_logic;
-    signal m_stop       : std_logic;
-    signal m_rise       : std_logic;
-    signal m_fall       : std_logic;
-    signal s_start      : std_logic;
-    signal s_stop       : std_logic;
-    signal s_rise       : std_logic;
-    signal s_fall       : std_logic;
+    signal m_start    : std_logic;
+    signal m_stop     : std_logic;
+    signal m_rise     : std_logic;
+    signal m_fall     : std_logic;
+    signal s_start    : std_logic;
+    signal s_stop     : std_logic;
+    signal s_rise     : std_logic;
+    signal s_fall     : std_logic;
 
 begin
 

@@ -215,11 +215,11 @@ architecture sim of tb_spi_port is
     -- test plan, per word and per frame
     signal plan_wcnt  : natural := 0;
     signal plan_mtx   : word_arr_t(0 to MAX_WORDS-1);
-    signal plan_sresp : word_arr_t(0 to MAX_WORDS-1)       := (others => (others => '0'));
-    signal plan_wbits : nat_arr_t(0 to MAX_WORDS-1)        := (others => WIDTH);
-    signal plan_wlast : std_logic_vector(0 to MAX_WORDS-1) := (others => '0');
-    signal plan_wfrm  : nat_arr_t(0 to MAX_WORDS-1)        := (others => 0);
-    signal plan_flen  : nat_arr_t(0 to MAX_FRAMES-1)       := (others => WIDTH);
+    signal plan_sresp : word_arr_t(0 to MAX_WORDS-1)        := (others => (others => '0'));
+    signal plan_wbits : nat_arr_t(0 to MAX_WORDS-1)         := (others => WIDTH);
+    signal plan_wlast : std_logic_vector(0 to MAX_WORDS-1)  := (others => '0');
+    signal plan_wfrm  : nat_arr_t(0 to MAX_WORDS-1)         := (others => 0);
+    signal plan_flen  : nat_arr_t(0 to MAX_FRAMES-1)        := (others => WIDTH);
     signal plan_b2b   : std_logic_vector(0 to MAX_FRAMES-1) := (others => '0');
 
 begin
@@ -735,7 +735,7 @@ begin
                 report "host: the two slaves report different words" severity error;
             hw_data(hw_n) <= a_rx_data;
             hw_bits(hw_n) <= to_integer(unsigned(a_rx_bits));
-            hw_n <= hw_n + 1;
+            hw_n          <= hw_n + 1;
         end if;
     end process host_rx_proc;
 

@@ -15,41 +15,41 @@ entity spi_datapath is
         CNT_BITS : positive := 6
     );
     port (
-        clk_i      : in  std_logic;
-        rst_i      : in  std_logic;
+        clk_i    : in  std_logic;
+        rst_i    : in  std_logic;
 
-        start_i    : in  std_logic;
-        stop_i     : in  std_logic;
-        sample_i   : in  std_logic;
-        shift_i    : in  std_logic;
-        load_i     : in  std_logic;
+        start_i  : in  std_logic;
+        stop_i   : in  std_logic;
+        sample_i : in  std_logic;
+        shift_i  : in  std_logic;
+        load_i   : in  std_logic;
 
-        role_i     : in  std_logic;  -- 1 = master: sample miso_i
-        miso_i     : in  std_logic;  -- not synchronised: master only, timed by our own SCK
-        mosi_i     : in  std_logic;  -- synchronised to clk_i (spi_sync does it)
+        role_i   : in  std_logic;  -- 1 = master: sample miso_i
+        miso_i   : in  std_logic;  -- not synchronised: master only, timed by our own SCK
+        mosi_i   : in  std_logic;  -- synchronised to clk_i (spi_sync does it)
 
-        data_i     : in  std_logic_vector(WIDTH-1 downto 0);
-        bits_i     : in  std_logic_vector(CNT_BITS-1 downto 0);
+        data_i   : in  std_logic_vector(WIDTH-1 downto 0);
+        bits_i   : in  std_logic_vector(CNT_BITS-1 downto 0);
 
-        mosi_o     : out std_logic;
-        miso_o     : out std_logic;
-        done_o     : out std_logic;
-        load_o     : out std_logic;  -- word received (stop_i), to the receive buffer
-        data_o     : out std_logic_vector(WIDTH-1 downto 0);
-        bits_o     : out std_logic_vector(CNT_BITS-1 downto 0)
+        mosi_o   : out std_logic;
+        miso_o   : out std_logic;
+        done_o   : out std_logic;
+        load_o   : out std_logic;  -- word received (stop_i), to the receive buffer
+        data_o   : out std_logic_vector(WIDTH-1 downto 0);
+        bits_o   : out std_logic_vector(CNT_BITS-1 downto 0)
     );
 end entity spi_datapath;
 
 architecture rtl of spi_datapath is
 
-    signal bit_cnt_reg  : unsigned(CNT_BITS-1 downto 0);
-    signal wlen_reg     : unsigned(CNT_BITS-1 downto 0);
+    signal bit_cnt_reg : unsigned(CNT_BITS-1 downto 0);
+    signal wlen_reg    : unsigned(CNT_BITS-1 downto 0);
 
-    signal tx_sh_reg    : std_logic_vector(WIDTH-1 downto 0);
-    signal rx_sh_reg    : std_logic_vector(WIDTH-1 downto 0);
-    signal din          : std_logic;
-    signal dout         : std_logic;
-    signal done         : std_logic;
+    signal tx_sh_reg   : std_logic_vector(WIDTH-1 downto 0);
+    signal rx_sh_reg   : std_logic_vector(WIDTH-1 downto 0);
+    signal din         : std_logic;
+    signal dout        : std_logic;
+    signal done        : std_logic;
 
 begin
 
@@ -88,11 +88,11 @@ begin
         end if;
     end process rx_proc;
 
-    mosi_o     <= dout;
-    miso_o     <= dout;
-    done_o     <= done;
-    load_o     <= stop_i;
-    data_o     <= rx_sh_reg;
-    bits_o     <= std_logic_vector(bit_cnt_reg);
+    mosi_o <= dout;
+    miso_o <= dout;
+    done_o <= done;
+    load_o <= stop_i;
+    data_o <= rx_sh_reg;
+    bits_o <= std_logic_vector(bit_cnt_reg);
 
 end architecture rtl;
