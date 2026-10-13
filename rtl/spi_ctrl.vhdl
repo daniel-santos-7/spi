@@ -7,6 +7,7 @@
 
 library IEEE;
 use IEEE.std_logic_1164.all;
+use IEEE.numeric_std.all;
 
 entity spi_ctrl is
     generic (
@@ -43,8 +44,21 @@ architecture rtl of spi_ctrl is
 
     type state_t is (S_IDLE, S_FRAME, M_IDLE, M_SCK_LO, M_SCK_HI, M_END);
 
+    -- bits needed to hold n (at least 1)
+    function bits_for(n : natural) return positive is
+        variable r : positive := 1;
+    begin
+        while 2**r <= n loop
+            r := r + 1;
+        end loop;
+        return r;
+    end function bits_for;
+
+    -- the SCK divider counts 0 to SCK_DIV-1
+    constant CNT_W : positive := bits_for(SCK_DIV-1);
+
     signal state_reg    : state_t;
-    signal cnt_reg      : natural range 0 to SCK_DIV;
+    signal cnt_reg      : unsigned(CNT_W-1 downto 0);
     signal sclk_reg     : std_logic;
     signal cs_n_reg     : std_logic;
     signal ready_reg    : std_logic;
@@ -128,10 +142,10 @@ begin
     begin
         if rising_edge(clk_i) then
             if rst_i = '1' then
-                cnt_reg <= 0;
+                cnt_reg <= (others => '0');
             elsif cnt_en_reg = '1' then
                 if cnt_end = '1' then
-                    cnt_reg <= 0;
+                    cnt_reg <= (others => '0');
                 else
                     cnt_reg <= cnt_reg + 1;
                 end if;
