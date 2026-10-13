@@ -29,7 +29,7 @@ entity spi_ctrl is
         cs_n_o      : out std_logic;
         cs_n_oe     : out std_logic;
         mosi_oe     : out std_logic;
-        miso_oe     : out std_logic;  -- slave role; spi_miso_gate adds CS#
+        miso_oe     : out std_logic;
         tx_ready_o  : out std_logic;
         start_o     : out std_logic;
         stop_o      : out std_logic;
@@ -158,7 +158,7 @@ begin
     cs_n_o     <= cs_n_reg;
     cs_n_oe    <= role_reg;
     mosi_oe    <= role_reg;
-    miso_oe    <= not role_reg;
+    miso_oe    <= not (ready_reg or role_reg);  -- exactly in S_FRAME
     tx_ready_o <= ready_reg;
     start_o    <= m_start or s_start;
     stop_o     <= m_stop or s_stop;

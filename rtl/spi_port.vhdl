@@ -68,8 +68,6 @@ architecture rtl of spi_port is
     signal spi_port_ctrl_shift       : std_logic;
     signal spi_port_ctrl_load        : std_logic;
 
-    signal spi_port_miso_gate_oe     : std_logic;
-
     signal spi_port_datapath_mosi    : std_logic;
     signal spi_port_datapath_miso    : std_logic;
     signal spi_port_datapath_done    : std_logic;
@@ -133,15 +131,6 @@ begin
         load_o      => spi_port_ctrl_load
     );
 
-    spi_port_miso_gate: entity work.spi_miso_gate port map (
-        clk_i       => clk_i,
-        rst_i       => rst_i,
-        en_i        => spi_port_ctrl_miso_oe,
-        cs_n_fall_i => spi_port_edge_cs_n_fall,
-        cs_n_rise_i => spi_port_edge_cs_n_rise,
-        oe_o        => spi_port_miso_gate_oe
-    );
-
     spi_port_datapath: entity work.spi_datapath generic map (
         WIDTH    => WIDTH,
         CNT_BITS => CNT_BITS
@@ -189,7 +178,7 @@ begin
     mosi_o     <= spi_port_datapath_mosi;
     mosi_oe    <= spi_port_ctrl_mosi_oe;
     miso_o     <= spi_port_datapath_miso;
-    miso_oe    <= spi_port_miso_gate_oe;
+    miso_oe    <= spi_port_ctrl_miso_oe;
     tx_ready_o <= spi_port_ctrl_tx_ready;
     rx_data_o  <= spi_port_rx_buf_data;
     rx_bits_o  <= spi_port_rx_buf_bits;
