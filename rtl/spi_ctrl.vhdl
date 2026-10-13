@@ -24,7 +24,7 @@ entity spi_ctrl is
         tx_valid_i  : in  std_logic;
         done_i      : in  std_logic;
         role_ack_o  : out std_logic;  -- role in effect (1 = master)
-        role_o      : out std_logic;  -- the same, to the datapath
+        role_o      : out std_logic;  -- the same, to spi_trx
         sclk_o      : out std_logic;
         sclk_oe     : out std_logic;
         cs_n_o      : out std_logic;

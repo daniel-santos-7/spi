@@ -1,7 +1,7 @@
 ----------------------------------------------------------------------
 -- Leaf project
 -- developed by: Daniel Santos
--- module: SPI datapath (shift registers, bit count, frame length)
+-- module: SPI transceiver (shift registers, bit count, frame length)
 -- 2026
 ----------------------------------------------------------------------
 
@@ -9,7 +9,7 @@ library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
 
-entity spi_datapath is
+entity spi_trx is
     generic (
         WIDTH    : positive := 32;
         CNT_BITS : positive := 6
@@ -38,9 +38,9 @@ entity spi_datapath is
         data_o   : out std_logic_vector(WIDTH-1 downto 0);
         bits_o   : out std_logic_vector(CNT_BITS-1 downto 0)
     );
-end entity spi_datapath;
+end entity spi_trx;
 
-architecture rtl of spi_datapath is
+architecture rtl of spi_trx is
 
     signal bit_cnt_reg : unsigned(CNT_BITS-1 downto 0);
     signal wlen_reg    : unsigned(CNT_BITS-1 downto 0);
@@ -53,8 +53,8 @@ architecture rtl of spi_datapath is
 
 begin
 
-    assert WIDTH >= 2 report "SPI datapath: WIDTH must be at least 2." severity failure;
-    assert 2**CNT_BITS > WIDTH report "SPI datapath: CNT_BITS too small to count WIDTH." severity failure;
+    assert WIDTH >= 2 report "SPI transceiver: WIDTH must be at least 2." severity failure;
+    assert 2**CNT_BITS > WIDTH report "SPI transceiver: CNT_BITS too small to count WIDTH." severity failure;
 
     din  <= miso_i when role_i = '1' else mosi_i;
     dout <= tx_sh_reg(WIDTH-1);
