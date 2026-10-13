@@ -40,6 +40,9 @@
 -- samples is). The host reads every word as it is reported, except
 -- once: it leaves one word unread, sends the next frame and checks
 -- that the buffer still holds the old word, so the new one is dropped.
+-- In one host frame both ports are reset halfway through: with CS#
+-- still low after the reset they must stay out of that frame (no word
+-- reported) and take the next one normally.
 --
 -- Checks: every word and bit count the slave reports, the
 -- words the master receives (the first tx_bits bits of the reply),
@@ -77,6 +80,7 @@ architecture sim of tb_spi_port is
     constant HOST_MAX   : integer := 2 * WIDTH + 8;
     constant HOST_URUN  : integer := 5;
     constant HOST_HOLD  : integer := 6;
+    constant HOST_RST   : integer := 10;
     constant MAX_FRAMES : integer := 2 * NUM_FRAMES + 1;
     constant MAX_WORDS  : integer := MAX_FRAMES;
     constant HOST_WORDS : integer := 4 * HOST_FRAMES;
@@ -530,6 +534,8 @@ begin
                 n := WIDTH / 2;
             elsif f = HOST_HOLD then
                 rnd(1, WIDTH, n);
+            elsif f = HOST_RST then
+                n := WIDTH;
             else
                 rnd(1, HOST_MAX, n);
             end if;
@@ -559,6 +565,12 @@ begin
             host_cs_n <= '0';
             cycles(SCK_DIV);
             for i in 0 to n-1 loop
+                if f = HOST_RST and i = n / 2 then
+                    -- reset both ports in the middle of the frame
+                    rst <= '1';
+                    cycles(2);
+                    rst <= '0';
+                end if;
                 host_mosi <= hbits(HOST_MAX-1-i);
                 if f = 2 and i = 1 then
                     host_resp <= not resp;
@@ -567,7 +579,7 @@ begin
                 cycles(SCK_DIV);
                 host_sclk <= '1';
                 hrx(HOST_MAX-1-i) := miso_in;
-                assert a_tx_ready = '0' and b_tx_ready = '0'
+                assert (a_tx_ready = '0' and b_tx_ready = '0') or (f = HOST_RST and i >= n / 2)
                     report "host: frame " & integer'image(f) & " tx_ready high during the frame" severity error;
                 cycles(SCK_DIV);
                 host_sclk <= '0';
@@ -578,7 +590,9 @@ begin
             host_mosi <= '0';
 
             for i in 0 to n-1 loop
-                if i < WIDTH then
+                if f = HOST_RST then
+                    null;  -- the reset clears the reply
+                elsif i < WIDTH then
                     assert hrx(HOST_MAX-1-i) = resp(WIDTH-1-i)
                         report "host: frame " & integer'image(f) & " reply bit " & integer'image(i) & " wrong" severity error;
                 else
@@ -589,6 +603,11 @@ begin
             cycles(10);
 
             ew := 1;
+            if f = HOST_RST then
+                -- the ports came out of reset with CS# low: they must stay
+                -- out of this frame and report nothing
+                ew := 0;
+            end if;
             if f = HOST_HOLD then
                 exp_rx := (others => '0');
                 for i in 0 to n-1 loop

@@ -33,7 +33,7 @@ begin
         if rising_edge(clk_i) then
             if rst_i = '1' then
                 sclk_dly_reg <= '0';
-                cs_n_dly_reg <= '1';
+                cs_n_dly_reg <= '0';  -- as spi_sync: no false fall after reset
             else
                 sclk_dly_reg <= sclk_i;
                 cs_n_dly_reg <= cs_n_i;

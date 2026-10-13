@@ -34,7 +34,7 @@ begin
         if rising_edge(clk_i) then
             if rst_i = '1' then
                 sclk_reg <= (others => '0');
-                cs_n_reg <= (others => '1');
+                cs_n_reg <= (others => '0');  -- busy: a CS# already low gives no fall
                 mosi_reg <= (others => '0');
             else
                 sclk_reg <= sclk_reg(0) & sclk_i;
