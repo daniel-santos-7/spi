@@ -42,7 +42,8 @@
 -- that the buffer still holds the old word, so the new one is dropped.
 -- In one host frame both ports are reset halfway through: with CS#
 -- still low after the reset they must stay out of that frame (no word
--- reported) and take the next one normally.
+-- reported, MISO not driven during the reset nor after it) and take the
+-- next one normally.
 --
 -- Checks: every word and bit count the slave reports, the
 -- words the master receives (the first tx_bits bits of the reply),
@@ -74,6 +75,7 @@ architecture sim of tb_spi_port is
 
     constant CLK_PERIOD : time    := 10 ns;
     constant CS_MIN     : integer := 2;
+    constant MISO_LAT   : integer := 3;
     constant GLITCH_F   : integer := 3;
     constant B2B_HI     : integer := 4;
     constant FRAME_CYC  : integer := 2 * WIDTH * SCK_DIV;
@@ -569,6 +571,9 @@ begin
                     -- reset both ports in the middle of the frame
                     rst <= '1';
                     cycles(2);
+                    assert a_miso_oe = '0' and b_miso_oe = '0'
+                        report "host: frame " & integer'image(f) & " MISO driven during reset" severity error;
+                    cycles(1);
                     rst <= '0';
                 end if;
                 host_mosi <= hbits(HOST_MAX-1-i);
@@ -581,6 +586,8 @@ begin
                 hrx(HOST_MAX-1-i) := miso_in;
                 assert (a_tx_ready = '0' and b_tx_ready = '0') or (f = HOST_RST and i >= n / 2)
                     report "host: frame " & integer'image(f) & " tx_ready high during the frame" severity error;
+                assert (a_miso_oe = '0' and b_miso_oe = '0') or not (f = HOST_RST and i >= n / 2)
+                    report "host: frame " & integer'image(f) & " MISO driven after a reset in the frame" severity error;
                 cycles(SCK_DIV);
                 host_sclk <= '0';
             end loop;
@@ -780,6 +787,7 @@ begin
         variable frame  : natural := 0;
         variable a_ack  : std_logic;
         variable b_ack  : std_logic;
+        variable cs_run : natural := 0;
     begin
         wait until rising_edge(clk) and chk_on = '1';
         a_ack  := a_role_ack;
@@ -794,10 +802,20 @@ begin
             assert sclk_in /= 'X' and cs_n_in /= 'X' and mosi_in /= 'X' and (miso_in /= 'X' or host_en = '1')
                 report "bus: contention on a pad" severity error;
 
+            -- cycles since CS# last changed: the slave follows CS# through
+            -- the synchroniser, so MISO is taken and released MISO_LAT late
+            -- (3 here, where the synchroniser always takes 2 cycles; 3 to 4
+            -- in hardware)
+            if cs_n_in /= cs_p then
+                cs_run := 0;
+            else
+                cs_run := cs_run + 1;
+            end if;
+
             if cs_n_in = '1' then
                 assert sclk_in = '0'
                     report "bus: SCK high while CS# is high" severity error;
-                assert miso_pad = 'L'
+                assert miso_pad = 'L' or cs_run < MISO_LAT
                     report "bus: MISO driven while CS# is high" severity error;
             end if;
 
@@ -868,7 +886,7 @@ begin
                 assert (sclk_pad = '0' or sclk_pad = '1') and (cs_n_pad = '0' or cs_n_pad = '1') and
                        (mosi_pad = '0' or mosi_pad = '1')
                     report "bus: master pins not driven" severity error;
-                if cs_n_in = '0' then
+                if cs_n_in = '0' and cs_run >= MISO_LAT then
                     assert miso_pad = '0' or miso_pad = '1'
                         report "bus: MISO not driven by the slave while CS# is low" severity error;
                 end if;

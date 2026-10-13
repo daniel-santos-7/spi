@@ -4,7 +4,7 @@ BUILD     := build
 GHDLFLAGS := --std=93 --workdir=$(BUILD)
 TOP       ?= spi_port
 
-RTL_SRCS  := rtl/spi_sync.vhdl rtl/spi_edge.vhdl rtl/spi_datapath.vhdl rtl/spi_rx_buf.vhdl rtl/spi_ctrl.vhdl rtl/spi_port.vhdl
+RTL_SRCS  := rtl/spi_sync.vhdl rtl/spi_edge.vhdl rtl/spi_datapath.vhdl rtl/spi_rx_buf.vhdl rtl/spi_ctrl.vhdl rtl/spi_miso_gate.vhdl rtl/spi_port.vhdl
 TB_SRCS   := tbs/tb_spi_port.vhdl
 TB        ?= tb_spi_port
 GENERICS  ?=
@@ -40,4 +40,4 @@ synth: $(RTL_SRCS) | $(BUILD)
 	@sed -n '/=== $(TOP) ===/,$$p' $(BUILD)/synth_$(TOP).stat
 
 clean:
-	rm -rf $(BUILD) spi_sync spi_edge spi_datapath spi_rx_buf spi_ctrl spi_port *.o
+	rm -rf $(BUILD) spi_sync spi_edge spi_datapath spi_rx_buf spi_ctrl spi_miso_gate spi_port *.o

@@ -68,6 +68,8 @@ architecture rtl of spi_port is
     signal spi_port_ctrl_shift       : std_logic;
     signal spi_port_ctrl_load        : std_logic;
 
+    signal spi_port_miso_gate_oe     : std_logic;
+
     signal spi_port_datapath_mosi    : std_logic;
     signal spi_port_datapath_miso    : std_logic;
     signal spi_port_datapath_done    : std_logic;
@@ -113,7 +115,6 @@ begin
         cs_n_rise_i => spi_port_edge_cs_n_rise,
         sclk_rise_i => spi_port_edge_sclk_rise,
         sclk_fall_i => spi_port_edge_sclk_fall,
-        cs_pin_i    => cs_n_i,
         tx_valid_i  => tx_valid_i,
         done_i      => spi_port_datapath_done,
         role_ack_o  => spi_port_ctrl_role_ack,
@@ -130,6 +131,15 @@ begin
         sample_o    => spi_port_ctrl_sample,
         shift_o     => spi_port_ctrl_shift,
         load_o      => spi_port_ctrl_load
+    );
+
+    spi_port_miso_gate: entity work.spi_miso_gate port map (
+        clk_i       => clk_i,
+        rst_i       => rst_i,
+        en_i        => spi_port_ctrl_miso_oe,
+        cs_n_fall_i => spi_port_edge_cs_n_fall,
+        cs_n_rise_i => spi_port_edge_cs_n_rise,
+        oe_o        => spi_port_miso_gate_oe
     );
 
     spi_port_datapath: entity work.spi_datapath generic map (
@@ -179,7 +189,7 @@ begin
     mosi_o     <= spi_port_datapath_mosi;
     mosi_oe    <= spi_port_ctrl_mosi_oe;
     miso_o     <= spi_port_datapath_miso;
-    miso_oe    <= spi_port_ctrl_miso_oe;
+    miso_oe    <= spi_port_miso_gate_oe;
     tx_ready_o <= spi_port_ctrl_tx_ready;
     rx_data_o  <= spi_port_rx_buf_data;
     rx_bits_o  <= spi_port_rx_buf_bits;

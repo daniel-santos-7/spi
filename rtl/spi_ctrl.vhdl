@@ -20,7 +20,6 @@ entity spi_ctrl is
         cs_n_rise_i : in  std_logic;
         sclk_rise_i : in  std_logic;
         sclk_fall_i : in  std_logic;
-        cs_pin_i    : in  std_logic;  -- CS# pin as is, for miso_oe
         tx_valid_i  : in  std_logic;
         done_i      : in  std_logic;
         role_ack_o  : out std_logic;  -- role in effect (1 = master)
@@ -30,7 +29,7 @@ entity spi_ctrl is
         cs_n_o      : out std_logic;
         cs_n_oe     : out std_logic;
         mosi_oe     : out std_logic;
-        miso_oe     : out std_logic;
+        miso_oe     : out std_logic;  -- slave role; spi_miso_gate adds CS#
         tx_ready_o  : out std_logic;
         start_o     : out std_logic;
         stop_o      : out std_logic;
@@ -159,7 +158,7 @@ begin
     cs_n_o     <= cs_n_reg;
     cs_n_oe    <= role_reg;
     mosi_oe    <= role_reg;
-    miso_oe    <= not (cs_pin_i or role_reg);
+    miso_oe    <= not role_reg;
     tx_ready_o <= ready_reg;
     start_o    <= m_start or s_start;
     stop_o     <= m_stop or s_stop;
