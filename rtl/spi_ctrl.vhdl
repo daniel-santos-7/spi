@@ -154,13 +154,11 @@ begin
                             end if;
                         end if;
                     when M_END =>
-                        -- wait until our own CS# is seen low through spi_sync,
-                        -- whatever its latency: IDLE_BUSY then waits for it to
-                        -- be seen high again, so it never looks like a slave frame
-                        if cs_n_i = '0' then
-                            state_reg <= IDLE_BUSY;
-                            role_reg  <= '0';
-                        end if;
+                        -- one cycle driving CS# high, then release it: by
+                        -- IDLE_BUSY our own CS# fall is already through spi_sync
+                        -- (2 or 3 cycles), so the CS# high it waits for is ours
+                        state_reg <= IDLE_BUSY;
+                        role_reg  <= '0';
                 end case;
             end if;
         end if;
