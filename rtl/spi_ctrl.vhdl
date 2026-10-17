@@ -17,8 +17,7 @@ entity spi_ctrl is
         clk_i        : in  std_logic;
         rst_i        : in  std_logic;
         cs_n_i       : in  std_logic;  -- synchronised CS# (spi_sync): bus busy while low
-        sclk_rise_i  : in  std_logic;  -- slave SCK edges (spi_edge)
-        sclk_fall_i  : in  std_logic;
+        sclk_i       : in  std_logic;  -- synchronised SCK (spi_sync), followed by the slave
         m_tx_valid_i : in  std_logic;  -- master word: starts a frame
         s_tx_valid_i : in  std_logic;  -- slave reply for the next frame
         done_i       : in  std_logic;
@@ -44,7 +43,7 @@ end entity spi_ctrl;
 
 architecture rtl of spi_ctrl is
 
-    type state_t is (IDLE_BUSY, IDLE_FREE, S_FRAME, M_SCK_LO, M_SCK_HI, M_END);
+    type state_t is (IDLE_BUSY, IDLE_FREE, S_SCK_LO, S_SCK_HI, M_SCK_LO, M_SCK_HI, M_END);
 
     -- bits needed to hold n (at least 1)
     function bits_for(n : natural) return positive is
@@ -110,15 +109,33 @@ begin
                             m_ready_reg <= '0';
                             role_reg    <= '1';
                         elsif cs_n_i = '0' then
-                            state_reg   <= S_FRAME;
+                            -- start from the SCK level seen now, so an SCK
+                            -- already high gives no rise
+                            if sclk_i = '1' then
+                                state_reg <= S_SCK_HI;
+                            else
+                                state_reg <= S_SCK_LO;
+                            end if;
                             m_ready_reg <= '0';
                             s_ready_reg <= '0';
                         end if;
-                    when S_FRAME =>
+                    -- the slave follows the synchronised SCK level; CS# high
+                    -- ends the frame first, so SCK edges with CS# high are ignored
+                    when S_SCK_LO =>
                         if cs_n_i = '1' then
                             state_reg   <= IDLE_FREE;
                             m_ready_reg <= '1';
                             s_ready_reg <= '1';
+                        elsif sclk_i = '1' then
+                            state_reg <= S_SCK_HI;
+                        end if;
+                    when S_SCK_HI =>
+                        if cs_n_i = '1' then
+                            state_reg   <= IDLE_FREE;
+                            m_ready_reg <= '1';
+                            s_ready_reg <= '1';
+                        elsif sclk_i = '0' then
+                            state_reg <= S_SCK_LO;
                         end if;
                     when M_SCK_LO =>
                         if cnt_end = '1' then
@@ -172,9 +189,9 @@ begin
 
     -- slave strobes, qualified by state the same way
     s_start <= '1' when state_reg = IDLE_FREE and cs_n_i      = '0' and m_tx_valid_i = '0' else '0';
-    s_stop  <= '1' when state_reg = S_FRAME   and cs_n_i      = '1' else '0';
-    s_rise  <= '1' when state_reg = S_FRAME   and sclk_rise_i = '1' else '0';
-    s_fall  <= '1' when state_reg = S_FRAME   and sclk_fall_i = '1' else '0';
+    s_stop  <= '1' when (state_reg = S_SCK_LO or state_reg = S_SCK_HI) and cs_n_i = '1' else '0';
+    s_rise  <= '1' when state_reg = S_SCK_LO  and cs_n_i      = '0' and sclk_i       = '1' else '0';
+    s_fall  <= '1' when state_reg = S_SCK_HI  and cs_n_i      = '0' and sclk_i       = '0' else '0';
 
     role_o       <= role_reg;
     sclk_o       <= sclk_reg;
@@ -182,7 +199,7 @@ begin
     cs_n_o       <= cs_n_reg;
     cs_n_oe      <= role_reg;
     mosi_oe      <= role_reg;
-    miso_oe      <= not s_ready_reg;  -- exactly in S_FRAME
+    miso_oe      <= not s_ready_reg;  -- exactly in S_SCK_LO and S_SCK_HI
     m_tx_ready_o <= m_ready_reg;
     s_tx_ready_o <= s_ready_reg;
     start_o      <= m_start or s_start;

@@ -12,7 +12,6 @@ Dual-role SPI in VHDL-93: one set of pins and one shift core, used either as a m
 
 ```
 rtl/spi_sync.vhdl     two-flip-flop synchronisers for SCK, CS# and MOSI
-rtl/spi_edge.vhdl     slave SCK edge detection on the synchronised SCK and CS#
 rtl/spi_ctrl.vhdl     control: FSM and role of each frame, master SCK/CS#, pin enables, TX handshakes
 rtl/spi_trx.vhdl      transceiver: shift registers, slave reply, bit count, frame length
 rtl/spi_rx_buf.vhdl   one-word receive buffer with a ready/valid output (one per role)

@@ -1,7 +1,6 @@
 build/
 *.o
 spi_sync
-spi_edge
 spi_trx
 spi_rx_buf
 spi_ctrl

@@ -53,9 +53,6 @@ architecture rtl of spi_port is
     signal spi_port_sync_cs_n       : std_logic;
     signal spi_port_sync_mosi       : std_logic;
 
-    signal spi_port_edge_sclk_rise  : std_logic;
-    signal spi_port_edge_sclk_fall  : std_logic;
-
     signal spi_port_ctrl_role       : std_logic;
     signal spi_port_ctrl_sclk       : std_logic;
     signal spi_port_ctrl_sclk_oe    : std_logic;
@@ -103,23 +100,13 @@ begin
         mosi_o => spi_port_sync_mosi
     );
 
-    spi_port_edge: entity work.spi_edge port map (
-        clk_i       => clk_i,
-        rst_i       => rst_i,
-        sclk_i      => spi_port_sync_sclk,
-        cs_n_i      => spi_port_sync_cs_n,
-        sclk_rise_o => spi_port_edge_sclk_rise,
-        sclk_fall_o => spi_port_edge_sclk_fall
-    );
-
     spi_port_ctrl: entity work.spi_ctrl generic map (
         SCK_DIV => SCK_DIV
     ) port map (
         clk_i        => clk_i,
         rst_i        => rst_i,
         cs_n_i       => spi_port_sync_cs_n,
-        sclk_rise_i  => spi_port_edge_sclk_rise,
-        sclk_fall_i  => spi_port_edge_sclk_fall,
+        sclk_i       => spi_port_sync_sclk,
         m_tx_valid_i => m_tx_valid_i,
         s_tx_valid_i => s_tx_valid_i,
         done_i       => spi_port_trx_done,
