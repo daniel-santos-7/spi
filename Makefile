@@ -18,7 +18,7 @@ $(BUILD):
 
 check: | $(BUILD)
 	$(GHDL) -a $(GHDLFLAGS) $(RTL_SRCS)
-	$(GHDL) -e $(GHDLFLAGS) $(TOP)
+	$(GHDL) -e $(GHDLFLAGS) -o $(BUILD)/$(TOP) $(TOP)
 
 sim: | $(BUILD)
 	$(GHDL) -a $(GHDLFLAGS) $(RTL_SRCS) $(TB_SRCS)
