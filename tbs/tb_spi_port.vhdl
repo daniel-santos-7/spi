@@ -10,8 +10,8 @@
 -- There is no role input: a port is a master for a frame its client
 -- starts on m_tx_* while the bus is free, and a slave for a frame whose
 -- CS# fall it sees first. Its slave reply goes in on s_tx_*, and the
--- words it receives come out of one buffer on rx_*, with m_rx_valid or
--- s_rx_valid by the role it had.
+-- words it receives come out of one buffer, on m_rx_* or s_rx_* by the
+-- role it had.
 -- Phase 0 has A as the master of every frame and B as the slave; phase
 -- 1 has the roles the other way round; phase 2 picks the master at
 -- random frame by frame. In one phase 2 frame the next frame is offered
@@ -177,9 +177,10 @@ architecture sim of tb_spi_port is
     signal a_s_tx_data  : word_t;
     signal a_m_rx_ready : std_logic;
     signal a_s_rx_ready : std_logic;
-    signal a_rx_data    : word_t;
-    signal a_rx_bits    : bits_t;
+    signal a_m_rx_data  : word_t;
     signal a_m_rx_valid : std_logic;
+    signal a_s_rx_data  : word_t;
+    signal a_s_rx_bits  : bits_t;
     signal a_s_rx_valid : std_logic;
 
     -- port B
@@ -200,9 +201,10 @@ architecture sim of tb_spi_port is
     signal b_s_tx_data  : word_t;
     signal b_m_rx_ready : std_logic;
     signal b_s_rx_ready : std_logic;
-    signal b_rx_data    : word_t;
-    signal b_rx_bits    : bits_t;
+    signal b_m_rx_data  : word_t;
     signal b_m_rx_valid : std_logic;
+    signal b_s_rx_data  : word_t;
+    signal b_s_rx_bits  : bits_t;
     signal b_s_rx_valid : std_logic;
 
     -- master client (the master port of the current frame, by swap)
@@ -211,7 +213,6 @@ architecture sim of tb_spi_port is
     signal m_tx_data  : word_t    := (others => '0');
     signal m_tx_bits  : bits_t    := (others => '0');
     signal m_rx_data  : word_t;
-    signal m_rx_bits  : bits_t;
     signal m_rx_valid : std_logic;
     signal m_hold     : std_logic := '0';  -- master client leaves its word unread
     signal hold_w     : integer   := -10;  -- the word held, and the one queued behind it
@@ -283,9 +284,10 @@ begin
         miso_oe      => a_miso_oe,
         m_tx_ready_o => a_m_tx_ready,
         s_tx_ready_o => a_s_tx_ready,
-        rx_data_o    => a_rx_data,
-        rx_bits_o    => a_rx_bits,
+        m_rx_data_o  => a_m_rx_data,
         m_rx_valid_o => a_m_rx_valid,
+        s_rx_data_o  => a_s_rx_data,
+        s_rx_bits_o  => a_s_rx_bits,
         s_rx_valid_o => a_s_rx_valid
     );
 
@@ -317,9 +319,10 @@ begin
         miso_oe      => b_miso_oe,
         m_tx_ready_o => b_m_tx_ready,
         s_tx_ready_o => b_s_tx_ready,
-        rx_data_o    => b_rx_data,
-        rx_bits_o    => b_rx_bits,
+        m_rx_data_o  => b_m_rx_data,
         m_rx_valid_o => b_m_rx_valid,
+        s_rx_data_o  => b_s_rx_data,
+        s_rx_bits_o  => b_s_rx_bits,
         s_rx_valid_o => b_s_rx_valid
     );
 
@@ -370,11 +373,10 @@ begin
     b_m_rx_ready <= '1' when host_en = '1' else '1' when plan_swap(m_rx_wcnt) = '1' and m_hold = '0' else '0';
     a_s_rx_ready <= host_rd when host_en = '1' else '1' when plan_swap(s_rx_wcnt) = '1' else '0';
     b_s_rx_ready <= host_rd when host_en = '1' else '1' when plan_swap(s_rx_wcnt) = '0' else '0';
-    m_rx_data    <= a_rx_data when plan_swap(m_rx_wcnt) = '0' else b_rx_data;
-    m_rx_bits    <= a_rx_bits when plan_swap(m_rx_wcnt) = '0' else b_rx_bits;
+    m_rx_data    <= a_m_rx_data when plan_swap(m_rx_wcnt) = '0' else b_m_rx_data;
     m_rx_valid   <= (a_m_rx_valid and a_m_rx_ready) or (b_m_rx_valid and b_m_rx_ready);
-    s_rx_data    <= a_rx_data when plan_swap(s_rx_wcnt) = '1' else b_rx_data;
-    s_rx_bits    <= a_rx_bits when plan_swap(s_rx_wcnt) = '1' else b_rx_bits;
+    s_rx_data    <= a_s_rx_data when plan_swap(s_rx_wcnt) = '1' else b_s_rx_data;
+    s_rx_bits    <= a_s_rx_bits when plan_swap(s_rx_wcnt) = '1' else b_s_rx_bits;
     s_rx_valid   <= (a_s_rx_valid and a_s_rx_ready) or (b_s_rx_valid and b_s_rx_ready);
 
     ------------------------------------------------------------------
@@ -726,12 +728,12 @@ begin
                 for i in 0 to n-1 loop
                     exp_rx(n-1-i) := hbits(HOST_MAX-1-i);
                 end loop;
-                assert hw_n = hw0 and a_s_rx_valid = '1' and to_integer(unsigned(a_rx_bits)) = n and a_rx_data = exp_rx
+                assert hw_n = hw0 and a_s_rx_valid = '1' and to_integer(unsigned(a_s_rx_bits)) = n and a_s_rx_data = exp_rx
                     report "host: frame " & integer'image(f) & " not held in the buffer" severity error;
                 sv_rx := exp_rx;
                 sv_k  := n;
             elsif f = HOST_HOLD + 1 then
-                assert hw_n = hw0 and a_s_rx_valid = '1' and to_integer(unsigned(a_rx_bits)) = sv_k and a_rx_data = sv_rx
+                assert hw_n = hw0 and a_s_rx_valid = '1' and to_integer(unsigned(a_s_rx_bits)) = sv_k and a_s_rx_data = sv_rx
                     report "host: frame " & integer'image(f) & " overwrote an unread word" severity error;
                 host_rd <= '1';
                 cycles(3);
@@ -859,10 +861,10 @@ begin
     begin
         wait until rising_edge(clk);
         if host_en = '1' and host_rd = '1' and a_s_rx_valid = '1' then
-            assert b_s_rx_valid = '1' and b_rx_data = a_rx_data and b_rx_bits = a_rx_bits
+            assert b_s_rx_valid = '1' and b_s_rx_data = a_s_rx_data and b_s_rx_bits = a_s_rx_bits
                 report "host: the two slaves report different words" severity error;
-            hw_data(hw_n) <= a_rx_data;
-            hw_bits(hw_n) <= to_integer(unsigned(a_rx_bits));
+            hw_data(hw_n) <= a_s_rx_data;
+            hw_bits(hw_n) <= to_integer(unsigned(a_s_rx_bits));
             hw_n          <= hw_n + 1;
         end if;
     end process host_rx_proc;
@@ -879,9 +881,6 @@ begin
         if chk_on = '1' and host_en = '0' and m_rx_valid = '1' then
             assert j < plan_wcnt
                 report "master: unexpected word " & hex(m_rx_data) severity error;
-            assert to_integer(unsigned(m_rx_bits)) = plan_wbits(j)
-                report "master: word " & integer'image(j) & " reported " & integer'image(to_integer(unsigned(m_rx_bits))) &
-                       " bits, expected " & integer'image(plan_wbits(j)) severity error;
             assert m_rx_data = top_bits(plan_sresp(j), plan_wbits(j))
                 report "master: word " & integer'image(j) & " is " & hex(m_rx_data) &
                        ", expected " & hex(top_bits(plan_sresp(j), plan_wbits(j))) severity error;

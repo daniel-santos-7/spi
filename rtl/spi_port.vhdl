@@ -38,9 +38,10 @@ entity spi_port is
         miso_oe      : out std_logic;
         m_tx_ready_o : out std_logic;
         s_tx_ready_o : out std_logic;
-        rx_data_o    : out std_logic_vector(WIDTH-1 downto 0);
-        rx_bits_o    : out std_logic_vector(CNT_BITS-1 downto 0);
+        m_rx_data_o  : out std_logic_vector(WIDTH-1 downto 0);
         m_rx_valid_o : out std_logic;
+        s_rx_data_o  : out std_logic_vector(WIDTH-1 downto 0);
+        s_rx_bits_o  : out std_logic_vector(CNT_BITS-1 downto 0);
         s_rx_valid_o : out std_logic
     );
 end entity spi_port;
@@ -181,9 +182,10 @@ begin
     miso_oe      <= spi_port_ctrl_miso_oe;
     m_tx_ready_o <= spi_port_ctrl_m_tx_ready;
     s_tx_ready_o <= spi_port_ctrl_s_tx_ready;
-    rx_data_o    <= spi_port_rx_buf_data;
-    rx_bits_o    <= spi_port_rx_buf_bits;
+    m_rx_data_o  <= spi_port_rx_buf_data;
     m_rx_valid_o <= spi_port_rx_buf_m_valid;
+    s_rx_data_o  <= spi_port_rx_buf_data;
+    s_rx_bits_o  <= spi_port_rx_buf_bits;
     s_rx_valid_o <= spi_port_rx_buf_s_valid;
 
 end architecture rtl;
