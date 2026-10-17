@@ -19,10 +19,13 @@ entity spi_trx is
         rst_i    : in  std_logic;
 
         start_i  : in  std_logic;
-        stop_i   : in  std_logic;
+        m_stop_i : in  std_logic;  -- master frame ends
+        s_stop_i : in  std_logic;  -- slave frame ends
         sample_i : in  std_logic;
         shift_i  : in  std_logic;
-        load_i   : in  std_logic;
+        load_i   : in  std_logic;  -- master word (data_i, bits_i) into tx_sh_reg
+        put_i    : in  std_logic;  -- slave reply (reply_i) into reply_reg
+        arm_i    : in  std_logic;  -- slave frame start: reply_reg into tx_sh_reg
 
         role_i   : in  std_logic;  -- 1 = master: sample miso_i
         miso_i   : in  std_logic;  -- not synchronised: master only, timed by our own SCK
@@ -30,11 +33,13 @@ entity spi_trx is
 
         data_i   : in  std_logic_vector(WIDTH-1 downto 0);
         bits_i   : in  std_logic_vector(CNT_BITS-1 downto 0);
+        reply_i  : in  std_logic_vector(WIDTH-1 downto 0);
 
         mosi_o   : out std_logic;
         miso_o   : out std_logic;
         done_o   : out std_logic;
-        load_o   : out std_logic;  -- word received (stop_i), to the receive buffer
+        m_load_o : out std_logic;  -- word received as master (m_stop_i), to its receive buffer
+        s_load_o : out std_logic;  -- word received as slave (s_stop_i), to its receive buffer
         data_o   : out std_logic_vector(WIDTH-1 downto 0);
         bits_o   : out std_logic_vector(CNT_BITS-1 downto 0)
     );
@@ -46,6 +51,7 @@ architecture rtl of spi_trx is
     signal wlen_reg    : unsigned(CNT_BITS-1 downto 0);
 
     signal tx_sh_reg   : std_logic_vector(WIDTH-1 downto 0);
+    signal reply_reg   : std_logic_vector(WIDTH-1 downto 0);
     signal rx_sh_reg   : std_logic_vector(WIDTH-1 downto 0);
     signal din         : std_logic;
     signal dout        : std_logic;
@@ -63,17 +69,31 @@ begin
     tx_proc: process(clk_i)
     begin
         if rising_edge(clk_i) then
-            if rst_i = '1' or (stop_i = '1' and bit_cnt_reg /= 0) then
+            if rst_i = '1' then
                 tx_sh_reg <= (others => '0');
                 wlen_reg  <= (others => '0');
             elsif load_i = '1' then
                 tx_sh_reg <= data_i;
                 wlen_reg  <= unsigned(bits_i);
+            elsif arm_i = '1' then
+                tx_sh_reg <= reply_reg;
             elsif shift_i = '1' then
                 tx_sh_reg <= tx_sh_reg(WIDTH-2 downto 0) & '0';
             end if;
         end if;
     end process tx_proc;
+
+    -- a slave frame with bits uses the reply up: underrun sends zeros
+    reply_proc: process(clk_i)
+    begin
+        if rising_edge(clk_i) then
+            if rst_i = '1' or (s_stop_i = '1' and bit_cnt_reg /= 0) then
+                reply_reg <= (others => '0');
+            elsif put_i = '1' then
+                reply_reg <= reply_i;
+            end if;
+        end if;
+    end process reply_proc;
 
     rx_proc: process(clk_i)
     begin
@@ -91,7 +111,8 @@ begin
     mosi_o <= dout;
     miso_o <= dout;
     done_o <= done;
-    load_o <= stop_i;
+    m_load_o <= m_stop_i;
+    s_load_o <= s_stop_i;
     data_o <= rx_sh_reg;
     bits_o <= std_logic_vector(bit_cnt_reg);
 
