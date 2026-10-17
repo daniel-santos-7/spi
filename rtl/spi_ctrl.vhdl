@@ -64,7 +64,7 @@ architecture rtl of spi_ctrl is
     signal cs_n_reg    : std_logic;
     signal m_ready_reg : std_logic;
     signal s_ready_reg : std_logic;
-    signal role_reg    : std_logic;
+    signal drv_en_reg  : std_logic;
     signal cnt_en_reg  : std_logic;
     signal cnt_end     : std_logic;
 
@@ -91,7 +91,7 @@ begin
                 cnt_en_reg  <= '0';
                 m_ready_reg <= '0';
                 s_ready_reg <= '1';
-                role_reg    <= '0';
+                drv_en_reg  <= '0';
             else
                 case state_reg is
                     when IDLE_BUSY =>
@@ -107,7 +107,7 @@ begin
                             cs_n_reg    <= '0';
                             cnt_en_reg  <= '1';
                             m_ready_reg <= '0';
-                            role_reg    <= '1';
+                            drv_en_reg  <= '1';
                         elsif cs_n_i = '0' then
                             -- start from the SCK level seen now, so an SCK
                             -- already high gives no rise
@@ -157,8 +157,8 @@ begin
                         -- one cycle driving CS# high, then release it: by
                         -- IDLE_BUSY our own CS# fall is already through spi_sync
                         -- (2 or 3 cycles), so the CS# high it waits for is ours
-                        state_reg <= IDLE_BUSY;
-                        role_reg  <= '0';
+                        state_reg  <= IDLE_BUSY;
+                        drv_en_reg <= '0';
                 end case;
             end if;
         end if;
@@ -191,12 +191,12 @@ begin
     s_rise  <= '1' when state_reg = S_SCK_LO  and cs_n_i      = '0' and sclk_i       = '1' else '0';
     s_fall  <= '1' when state_reg = S_SCK_HI  and cs_n_i      = '0' and sclk_i       = '0' else '0';
 
-    role_o       <= role_reg;
+    role_o       <= drv_en_reg;
     sclk_o       <= sclk_reg;
-    sclk_oe      <= role_reg;
+    sclk_oe      <= drv_en_reg;
     cs_n_o       <= cs_n_reg;
-    cs_n_oe      <= role_reg;
-    mosi_oe      <= role_reg;
+    cs_n_oe      <= drv_en_reg;
+    mosi_oe      <= drv_en_reg;
     miso_oe      <= not s_ready_reg;  -- exactly in S_SCK_LO and S_SCK_HI
     m_tx_ready_o <= m_ready_reg;
     s_tx_ready_o <= s_ready_reg;
