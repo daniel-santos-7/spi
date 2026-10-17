@@ -75,7 +75,7 @@ Host timing, in system clock cycles (the port sees the pins 2 to 3 cycles late):
 - SCK at least 5 cycles high and 5 low (SCK ≤ clk/10)
 - at least 5 cycles from the `CS#` fall to the first SCK rise
 - MISO is driven from 3–4 cycles after `CS#` falls until 3–4 cycles after it rises, so wait 4 cycles before selecting another slave that shares MISO
-- the reply for a frame must be written by the time the port sees `CS#` fall, so keep `CS#` high for a few cycles if the client waits for the previous word first
+- the reply for a frame must be written by the time the port sees `CS#` fall (a reply taken in that very cycle still goes out in that frame), so keep `CS#` high for a few cycles if the client waits for the previous word first
 - `CS#` must toggle to delimit frames (a `CS#` tied low is not supported)
 
 ## License

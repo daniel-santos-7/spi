@@ -75,6 +75,8 @@ begin
             elsif load_i = '1' then
                 tx_sh_reg <= data_i;
                 wlen_reg  <= unsigned(bits_i);
+            elsif arm_i = '1' and put_i = '1' then
+                tx_sh_reg <= reply_i;  -- reply written as the frame starts
             elsif arm_i = '1' then
                 tx_sh_reg <= reply_reg;
             elsif shift_i = '1' then

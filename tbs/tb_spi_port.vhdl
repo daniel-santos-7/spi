@@ -37,7 +37,8 @@
 -- be 0. One host frame, after a shorter one, goes out with no reply
 -- written (underrun) and must send zeros, not the reply of the shorter
 -- frame; the reply written before the empty frame must go out in the
--- next one; a reply offered during a frame must not be taken
+-- next one; a reply written in the very cycle a frame starts must go
+-- out in that frame; a reply offered during a frame must not be taken
 -- (s_tx_ready stays low while CS# is low, high between frames).
 -- Both slaves get the same reply, so MISO
 -- contention is not checked in this phase (every reply bit the host
@@ -90,6 +91,7 @@ architecture sim of tb_spi_port is
     constant HOST_MAX   : integer := 2 * WIDTH + 8;
     constant HOST_URUN  : integer := 5;
     constant HOST_HOLD  : integer := 6;
+    constant HOST_TIE   : integer := 8;
     constant HOST_RST   : integer := 10;
     constant MAX_FRAMES : integer := 3 * NUM_FRAMES + 1;
     constant MAX_WORDS  : integer := MAX_FRAMES;
@@ -640,7 +642,7 @@ begin
                 n := WIDTH / 2;
             elsif f = HOST_HOLD then
                 rnd(1, WIDTH, n);
-            elsif f = HOST_RST then
+            elsif f = HOST_RST or f = HOST_TIE then
                 n := WIDTH;
             else
                 rnd(1, HOST_MAX, n);
@@ -650,6 +652,8 @@ begin
                 report "host: frame " & integer'image(f) & " ports not ready between frames" severity error;
             if f = HOST_URUN then
                 resp := (others => '0');
+            elsif f = HOST_TIE then
+                rnd_bits(resp);  -- written below, as the frame starts
             elsif prev_n = 0 then
                 resp := prev;
             else
@@ -669,7 +673,25 @@ begin
             hw0 := hw_n;
 
             host_cs_n <= '0';
-            cycles(SCK_DIV);
+            if f = HOST_TIE then
+                -- write the reply on the edge that starts the frame: high
+                -- s_tx_ready on that edge, low on the next one (the ports
+                -- see CS# low 3 edges after host_cs_n falls); it must go out
+                -- in this frame
+                cycles(2);
+                host_resp <= resp;
+                host_wr   <= '1';
+                cycles(1);
+                assert a_s_tx_ready = '1' and b_s_tx_ready = '1'
+                    report "host: frame " & integer'image(f) & " ready dropped before the frame start" severity error;
+                host_wr   <= '0';
+                cycles(1);
+                assert a_s_tx_ready = '0' and b_s_tx_ready = '0'
+                    report "host: frame " & integer'image(f) & " reply not taken on the frame start edge" severity error;
+                cycles(SCK_DIV - 4);
+            else
+                cycles(SCK_DIV);
+            end if;
             for i in 0 to n-1 loop
                 if f = HOST_RST and i = n / 2 then
                     -- reset both ports in the middle of the frame
