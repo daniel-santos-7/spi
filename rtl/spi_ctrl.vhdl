@@ -58,24 +58,24 @@ architecture rtl of spi_ctrl is
     -- the SCK divider counts 0 to SCK_DIV-1
     constant CNT_W : positive := bits_for(SCK_DIV-1);
 
-    signal state_reg   : state_t;
-    signal cnt_reg     : unsigned(CNT_W-1 downto 0);
-    signal sclk_reg    : std_logic;
-    signal cs_n_reg    : std_logic;
-    signal m_ready_reg : std_logic;
-    signal s_ready_reg : std_logic;
-    signal drv_en_reg  : std_logic;
-    signal cnt_en_reg  : std_logic;
-    signal cnt_end     : std_logic;
+    signal state_reg    : state_t;
+    signal cnt_reg      : unsigned(CNT_W-1 downto 0);
+    signal sclk_reg     : std_logic;
+    signal cs_n_reg     : std_logic;
+    signal ready_reg    : std_logic;
+    signal m_drv_en_reg : std_logic;
+    signal s_drv_en_reg : std_logic;
+    signal cnt_en_reg   : std_logic;
+    signal cnt_end      : std_logic;
 
-    signal m_start     : std_logic;
-    signal m_stop      : std_logic;
-    signal m_rise      : std_logic;
-    signal m_fall      : std_logic;
-    signal s_start     : std_logic;
-    signal s_stop      : std_logic;
-    signal s_rise      : std_logic;
-    signal s_fall      : std_logic;
+    signal m_start      : std_logic;
+    signal m_stop       : std_logic;
+    signal m_rise       : std_logic;
+    signal m_fall       : std_logic;
+    signal s_start      : std_logic;
+    signal s_stop       : std_logic;
+    signal s_rise       : std_logic;
+    signal s_fall       : std_logic;
 
 begin
 
@@ -85,29 +85,29 @@ begin
     begin
         if rising_edge(clk_i) then
             if rst_i = '1' then
-                state_reg   <= IDLE_BUSY;  -- as spi_sync: busy until CS# is seen high
-                sclk_reg    <= '0';
-                cs_n_reg    <= '1';
-                cnt_en_reg  <= '0';
-                m_ready_reg <= '0';
-                s_ready_reg <= '1';
-                drv_en_reg  <= '0';
+                state_reg    <= IDLE_BUSY;  -- as spi_sync: busy until CS# is seen high
+                sclk_reg     <= '0';
+                cs_n_reg     <= '1';
+                cnt_en_reg   <= '0';
+                ready_reg    <= '0';
+                m_drv_en_reg <= '0';
+                s_drv_en_reg <= '0';
             else
                 case state_reg is
                     when IDLE_BUSY =>
                         if cs_n_i = '1' then
-                            state_reg   <= IDLE_FREE;
-                            m_ready_reg <= '1';
+                            state_reg <= IDLE_FREE;
+                            ready_reg <= '1';
                         end if;
                     when IDLE_FREE =>
                         -- a write taken in the cycle CS# is seen low wins: that
                         -- tie is inside the collision window anyway
                         if m_tx_valid_i = '1' then
-                            state_reg   <= M_SCK_LO;
-                            cs_n_reg    <= '0';
-                            cnt_en_reg  <= '1';
-                            m_ready_reg <= '0';
-                            drv_en_reg  <= '1';
+                            state_reg    <= M_SCK_LO;
+                            cs_n_reg     <= '0';
+                            cnt_en_reg   <= '1';
+                            ready_reg    <= '0';
+                            m_drv_en_reg <= '1';
                         elsif cs_n_i = '0' then
                             -- start from the SCK level seen now, so an SCK
                             -- already high gives no rise
@@ -116,24 +116,24 @@ begin
                             else
                                 state_reg <= S_SCK_LO;
                             end if;
-                            m_ready_reg <= '0';
-                            s_ready_reg <= '0';
+                            ready_reg    <= '0';
+                            s_drv_en_reg <= '1';
                         end if;
                     -- the slave follows the synchronised SCK level; CS# high
                     -- ends the frame first, so SCK edges with CS# high are ignored
                     when S_SCK_LO =>
                         if cs_n_i = '1' then
-                            state_reg   <= IDLE_FREE;
-                            m_ready_reg <= '1';
-                            s_ready_reg <= '1';
+                            state_reg    <= IDLE_FREE;
+                            ready_reg    <= '1';
+                            s_drv_en_reg <= '0';
                         elsif sclk_i = '1' then
                             state_reg <= S_SCK_HI;
                         end if;
                     when S_SCK_HI =>
                         if cs_n_i = '1' then
-                            state_reg   <= IDLE_FREE;
-                            m_ready_reg <= '1';
-                            s_ready_reg <= '1';
+                            state_reg    <= IDLE_FREE;
+                            ready_reg    <= '1';
+                            s_drv_en_reg <= '0';
                         elsif sclk_i = '0' then
                             state_reg <= S_SCK_LO;
                         end if;
@@ -157,8 +157,8 @@ begin
                         -- one cycle driving CS# high, then release it: by
                         -- IDLE_BUSY our own CS# fall is already through spi_sync
                         -- (2 or 3 cycles), so the CS# high it waits for is ours
-                        state_reg  <= IDLE_BUSY;
-                        drv_en_reg <= '0';
+                        state_reg    <= IDLE_BUSY;
+                        m_drv_en_reg <= '0';
                 end case;
             end if;
         end if;
@@ -191,22 +191,22 @@ begin
     s_rise  <= '1' when state_reg = S_SCK_LO  and cs_n_i      = '0' and sclk_i       = '1' else '0';
     s_fall  <= '1' when state_reg = S_SCK_HI  and cs_n_i      = '0' and sclk_i       = '0' else '0';
 
-    role_o       <= drv_en_reg;
+    role_o       <= m_drv_en_reg;
     sclk_o       <= sclk_reg;
-    sclk_oe      <= drv_en_reg;
+    sclk_oe      <= m_drv_en_reg;
     cs_n_o       <= cs_n_reg;
-    cs_n_oe      <= drv_en_reg;
-    mosi_oe      <= drv_en_reg;
-    miso_oe      <= not s_ready_reg;  -- exactly in S_SCK_LO and S_SCK_HI
-    m_tx_ready_o <= m_ready_reg;
-    s_tx_ready_o <= s_ready_reg;
+    cs_n_oe      <= m_drv_en_reg;
+    mosi_oe      <= m_drv_en_reg;
+    miso_oe      <= s_drv_en_reg;  -- exactly in S_SCK_LO and S_SCK_HI
+    m_tx_ready_o <= ready_reg;     -- both only with no frame running
+    s_tx_ready_o <= ready_reg;
     start_o      <= m_start or s_start;
     m_stop_o     <= m_stop;
     s_stop_o     <= s_stop;
     sample_o     <= m_rise or s_rise;  -- mode 0: sample on SCK rise
     shift_o      <= m_fall or s_fall;  -- and shift on SCK fall
     load_o       <= m_start;
-    put_o        <= s_tx_valid_i and s_ready_reg;
+    put_o        <= s_tx_valid_i and ready_reg;
     arm_o        <= s_start;
 
 end architecture rtl;

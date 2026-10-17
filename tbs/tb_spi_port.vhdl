@@ -39,7 +39,8 @@
 -- frame; the reply written before the empty frame must go out in the
 -- next one; a reply written in the very cycle a frame starts must go
 -- out in that frame; a reply offered during a frame must not be taken
--- (s_tx_ready stays low while CS# is low, high between frames).
+-- (s_tx_ready stays low while CS# is low, also after the reset in the
+-- middle of a frame, and high between frames).
 -- Both slaves get the same reply, so MISO
 -- contention is not checked in this phase (every reply bit the host
 -- samples is). The host reads every word as it is reported, except
@@ -58,8 +59,9 @@
 -- master frame seen as a slave frame), CS# high time, SCK phases, MOSI/MISO changing
 -- only while SCK is low, frame length, pad contention, that SCK/CS#/MOSI
 -- are driven by the master of the frame only and released between
--- frames, MISO by the slave only, and that m_tx_ready is low while
--- CS# is low (look before driving, up to the synchroniser latency).
+-- frames, MISO by the slave only, and that m_tx_ready and s_tx_ready
+-- are low while CS# is low (look before driving, up to the synchroniser
+-- latency): no write of either kind is taken during a frame.
 --
 ----------------------------------------------------------------------
 
@@ -421,7 +423,10 @@ begin
         variable held    : boolean := false;
         variable hx      : std_logic;
         variable sw      : std_logic;
-        variable sw_p    : std_logic := '0';
+        variable sw_p    : std_logic := '0';  -- master of the last frame planned
+        variable nx_mtx  : word_t;
+        variable nx_len  : integer;
+        variable nx_sw   : std_logic;
         variable last_a  : integer := -1;
         variable last_b  : integer := -1;
 
@@ -451,6 +456,81 @@ begin
             x := t;
         end procedure rnd_bits;
 
+        -- plan frame g of phase ph as word w (one word per frame, so
+        -- also frame w): draws its data, reply, length and master
+        procedure plan_frame(ph, g, w : in integer; mtx_o : out word_t; len_o : out integer; sw_o : out std_logic) is
+            variable m  : word_t;
+            variable rs : word_t;
+            variable l  : integer;
+            variable kk : integer;
+            variable x  : integer;
+            variable sv : std_logic;
+        begin
+            rnd_bits(m);
+            rnd_bits(rs);
+            rnd(0, 7, x);
+            if x = 0 then
+                l := 0;
+            elsif x = 1 and WIDTH < 2**CNT_BITS-1 then
+                rnd(WIDTH+1, 2**CNT_BITS-1, l);
+            elsif x <= 3 then
+                l := WIDTH;
+            else
+                rnd(1, WIDTH, l);
+            end if;
+            if ph = 2 and g = EARLY_F then
+                l := WIDTH;
+            end if;
+            if l = 0 or l > WIDTH then
+                kk      := WIDTH;
+                n_mclip := n_mclip + 1;
+            else
+                kk := l;
+            end if;
+            if kk < WIDTH then
+                n_mshrt := n_mshrt + 1;
+            end if;
+
+            -- master: A in phase 0, B in phase 1, at random in phase 2
+            -- (the other port after an early offer or a held word)
+            if ph = 0 then
+                sv := '0';
+            elsif ph = 1 then
+                sv := '1';
+            elsif (g = EARLY_F + 1 or g = HOLD_F + 1) and g > 1 then
+                sv := not sw_p;
+            else
+                rnd(0, 1, x);
+                if x = 1 then
+                    sv := '1';
+                else
+                    sv := '0';
+                end if;
+            end if;
+            if w > 0 and sv /= sw_p then
+                n_swp := n_swp + 1;
+            end if;
+            sw_p := sv;
+            plan_swap(w) <= sv;
+            if sv = '1' then
+                plan_sprev(w) <= last_a;
+                last_a        := w;
+            else
+                plan_sprev(w) <= last_b;
+                last_b        := w;
+            end if;
+
+            plan_wlast(w) <= '1';
+            plan_mtx(w)   <= m;
+            plan_sresp(w) <= rs;
+            plan_wbits(w) <= kk;
+            plan_wfrm(w)  <= w;
+            plan_flen(w)  <= kk;
+            mtx_o := m;
+            len_o := l;
+            sw_o  := sv;
+        end procedure plan_frame;
+
         procedure cycles(c : in natural) is
         begin
             for i in 1 to c loop
@@ -479,71 +559,23 @@ begin
                 end if;
             end if;
 
+            -- frames are planned one ahead, so the reply of the next frame
+            -- can go in before this one starts and wait through it
             b2b := false;
+            plan_frame(ph, 1, word, nx_mtx, nx_len, nx_sw);
             for f in 1 to NUM_FRAMES loop
-                rnd_bits(mtx);
-                rnd_bits(resp);
-                rnd(0, 7, v);
-                if v = 0 then
-                    len := 0;
-                elsif v = 1 and WIDTH < 2**CNT_BITS-1 then
-                    rnd(WIDTH+1, 2**CNT_BITS-1, len);
-                elsif v <= 3 then
-                    len := WIDTH;
+                mtx := nx_mtx;
+                len := nx_len;
+                sw  := nx_sw;
+                if f < NUM_FRAMES then
+                    plan_frame(ph, f + 1, word + 1, nx_mtx, nx_len, nx_sw);
+                    plan_wcnt <= word + 2;
                 else
-                    rnd(1, WIDTH, len);
+                    plan_wcnt <= word + 1;
                 end if;
-                if ph = 2 and f = EARLY_F then
-                    len := WIDTH;
-                end if;
-                if len = 0 or len > WIDTH then
-                    k       := WIDTH;
-                    n_mclip := n_mclip + 1;
-                else
-                    k := len;
-                end if;
-                if k < WIDTH then
-                    n_mshrt := n_mshrt + 1;
-                end if;
-
-                -- master of this frame: A in phase 0, B in phase 1, at
-                -- random in phase 2 (the other port after an early offer)
-                if ph = 0 then
-                    sw := '0';
-                elsif ph = 1 then
-                    sw := '1';
-                elsif early or held then
-                    sw := not sw_p;
-                else
-                    rnd(0, 1, v);
-                    if v = 1 then
-                        sw := '1';
-                    else
-                        sw := '0';
-                    end if;
-                end if;
-                if word > 0 and sw /= sw_p then
-                    n_swp := n_swp + 1;
-                end if;
-                plan_swap(word) <= sw;
-                if sw = '1' then
-                    plan_sprev(word) <= last_a;
-                    last_a           := word;
-                else
-                    plan_sprev(word) <= last_b;
-                    last_b           := word;
-                end if;
-
-                plan_wlast(word)  <= '1';
-                plan_mtx(word)    <= mtx;
-                plan_sresp(word)  <= resp;
-                plan_wbits(word)  <= k;
-                plan_wfrm(word)   <= frame;
-                plan_flen(frame)  <= k;
                 if b2b or early then
                     plan_b2b(frame) <= '1';
                 end if;
-                plan_wcnt <= word + 1;
 
                 if ph = 2 and f = HOLD_F and f < NUM_FRAMES then
                     m_hold <= '1';
@@ -560,7 +592,6 @@ begin
                 m_tx_valid <= '0';
                 frame := frame + 1;
                 word  := word + 1;
-                sw_p  := sw;
 
                 if ph = 2 and f = EARLY_F and f < NUM_FRAMES then
                     -- offer the next frame on the other port in the middle
@@ -711,7 +742,7 @@ begin
                 cycles(SCK_DIV);
                 host_sclk <= '1';
                 hrx(HOST_MAX-1-i) := miso_in;
-                assert (a_s_tx_ready = '0' and b_s_tx_ready = '0') or (f = HOST_RST and i >= n / 2)
+                assert a_s_tx_ready = '0' and b_s_tx_ready = '0'
                     report "host: frame " & integer'image(f) & " s_tx_ready high during the frame" severity error;
                 assert a_m_tx_ready = '0' and b_m_tx_ready = '0'
                     report "host: frame " & integer'image(f) & " m_tx_ready high during the frame" severity error;
@@ -809,7 +840,7 @@ begin
                integer'image(WIDTH) & " bits (" & integer'image(n_b2b) & " back-to-back, " &
                integer'image(n_mshrt) & " shorter, " & integer'image(n_mclip) &
                " with tx_bits 0 or over WIDTH, " & integer'image(n_swp) & " role changes, " &
-               integer'image(n_surv) & " replies written during an own master frame), " & integer'image(HOST_FRAMES) & " host frames (" &
+               integer'image(n_surv) & " replies kept through an own master frame), " & integer'image(HOST_FRAMES) & " host frames (" &
                integer'image(n_empty) & " empty, " & integer'image(n_short) & " shorter, " &
                integer'image(n_exact) & " exact, " & integer'image(n_long) & " longer)"
             severity note;
@@ -827,15 +858,32 @@ begin
     s_tx_valid <= '1' when host_en = '0' and s_tx_cnt < plan_wcnt and s_wdone > plan_sprev(s_tx_cnt) else '0';
 
     slave_tx_proc: process
+        variable a_pend : boolean := false;  -- a reply waits for the port's next slave frame
+        variable b_pend : boolean := false;
+        variable a_oe_p : std_logic := '0';
+        variable b_oe_p : std_logic := '0';
     begin
         wait until rising_edge(clk);
+        -- coverage: the port starts a master frame with a reply pending
+        if (a_pend and a_cs_n_oe = '1' and a_oe_p = '0') or (b_pend and b_cs_n_oe = '1' and b_oe_p = '0') then
+            n_surv <= n_surv + 1;
+        end if;
+        if a_miso_oe = '1' then
+            a_pend := false;
+        end if;
+        if b_miso_oe = '1' then
+            b_pend := false;
+        end if;
         if s_tx_valid = '1' and s_tx_ready = '1' then
             s_tx_cnt <= s_tx_cnt + 1;
-            -- coverage: the reply goes in while its port masters a frame
-            if (plan_swap(s_tx_cnt) = '1' and a_cs_n_oe = '1') or (plan_swap(s_tx_cnt) = '0' and b_cs_n_oe = '1') then
-                n_surv <= n_surv + 1;
+            if plan_swap(s_tx_cnt) = '1' then
+                a_pend := true;
+            else
+                b_pend := true;
             end if;
         end if;
+        a_oe_p := a_cs_n_oe;
+        b_oe_p := b_cs_n_oe;
     end process slave_tx_proc;
 
     slave_rx_proc: process
@@ -1063,11 +1111,14 @@ begin
             -- low, up to the synchroniser latency
             assert (a_m_tx_ready = '0' and b_m_tx_ready = '0') or cs_n_in = '1' or cs_run < MISO_LAT
                 report "bus: m_tx_ready high while CS# is low" severity error;
+            -- no reply is taken while a frame runs, master or slave
+            assert (a_s_tx_ready = '0' and b_s_tx_ready = '0') or cs_n_in = '1' or cs_run < MISO_LAT
+                report "bus: s_tx_ready high while CS# is low" severity error;
             -- a ready only drops when a write is taken or the bus gets busy
             if rst = '0' and cs_n_in = '1' then
                 assert (a_mr_p = '0' or a_m_tx_ready = '1' or a_mt_p) and (b_mr_p = '0' or b_m_tx_ready = '1' or b_mt_p)
                     report "bus: m_tx_ready dropped with no write and the bus idle" severity error;
-                assert (a_sr_p = '0' or a_s_tx_ready = '1' or a_st_p) and (b_sr_p = '0' or b_s_tx_ready = '1' or b_st_p)
+                assert (a_sr_p = '0' or a_s_tx_ready = '1' or a_st_p or a_mt_p) and (b_sr_p = '0' or b_s_tx_ready = '1' or b_st_p or b_mt_p)
                     report "bus: s_tx_ready dropped with the bus idle" severity error;
             end if;
             a_mr_p := a_m_tx_ready;
