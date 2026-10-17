@@ -38,8 +38,8 @@ entity spi_trx is
         mosi_o   : out std_logic;
         miso_o   : out std_logic;
         done_o   : out std_logic;
-        m_load_o : out std_logic;  -- word received as master (m_stop_i), to its receive buffer
-        s_load_o : out std_logic;  -- word received as slave (s_stop_i), to its receive buffer
+        m_load_o : out std_logic;  -- word received as master (m_stop_i), to the receive buffer
+        s_load_o : out std_logic;  -- word received as slave (s_stop_i), to the receive buffer
         data_o   : out std_logic_vector(WIDTH-1 downto 0);
         bits_o   : out std_logic_vector(CNT_BITS-1 downto 0)
     );

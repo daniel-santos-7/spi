@@ -1,7 +1,7 @@
 ----------------------------------------------------------------------
 -- Leaf project
 -- developed by: Daniel Santos
--- module: SPI receive buffer (one word, ready/valid output)
+-- module: SPI receive buffer (one word, a ready/valid pair per role)
 -- 2026
 ----------------------------------------------------------------------
 
@@ -14,43 +14,56 @@ entity spi_rx_buf is
         CNT_BITS : positive := 6
     );
     port (
-        clk_i   : in  std_logic;
-        rst_i   : in  std_logic;
-        load_i  : in  std_logic;  -- word offered (frame end), no ready back
-        data_i  : in  std_logic_vector(WIDTH-1 downto 0);
-        bits_i  : in  std_logic_vector(CNT_BITS-1 downto 0);
-        ready_i : in  std_logic;
-        valid_o : out std_logic;
-        data_o  : out std_logic_vector(WIDTH-1 downto 0);
-        bits_o  : out std_logic_vector(CNT_BITS-1 downto 0)
+        clk_i     : in  std_logic;
+        rst_i     : in  std_logic;
+        m_load_i  : in  std_logic;  -- word of a master frame offered, no ready back
+        s_load_i  : in  std_logic;  -- word of a slave frame offered, no ready back
+        data_i    : in  std_logic_vector(WIDTH-1 downto 0);
+        bits_i    : in  std_logic_vector(CNT_BITS-1 downto 0);
+        m_ready_i : in  std_logic;
+        s_ready_i : in  std_logic;
+        m_valid_o : out std_logic;
+        s_valid_o : out std_logic;
+        data_o    : out std_logic_vector(WIDTH-1 downto 0);
+        bits_o    : out std_logic_vector(CNT_BITS-1 downto 0)
     );
 end entity spi_rx_buf;
 
 architecture rtl of spi_rx_buf is
 
-    signal valid_reg : std_logic;
-    signal data_reg  : std_logic_vector(WIDTH-1 downto 0);
-    signal bits_reg  : std_logic_vector(CNT_BITS-1 downto 0);
+    signal m_valid_reg : std_logic;
+    signal s_valid_reg : std_logic;
+    signal data_reg    : std_logic_vector(WIDTH-1 downto 0);
+    signal bits_reg    : std_logic_vector(CNT_BITS-1 downto 0);
+    signal full        : std_logic;
+    signal taken       : std_logic;
 
 begin
+
+    -- at most one valid is high: the role of the frame that filled it
+    full  <= m_valid_reg or s_valid_reg;
+    taken <= (m_valid_reg and m_ready_i) or (s_valid_reg and s_ready_i);
 
     buf_proc: process(clk_i)
     begin
         if rising_edge(clk_i) then
             if rst_i = '1' then
-                valid_reg <= '0';
-                data_reg  <= (others => '0');
-                bits_reg  <= (others => '0');
-            elsif valid_reg = '0' or ready_i = '1' then
-                valid_reg <= load_i;
-                data_reg  <= data_i;
-                bits_reg  <= bits_i;
+                m_valid_reg <= '0';
+                s_valid_reg <= '0';
+                data_reg    <= (others => '0');
+                bits_reg    <= (others => '0');
+            elsif full = '0' or taken = '1' then
+                m_valid_reg <= m_load_i;
+                s_valid_reg <= s_load_i;
+                data_reg    <= data_i;
+                bits_reg    <= bits_i;
             end if;
         end if;
     end process buf_proc;
 
-    valid_o <= valid_reg;
-    data_o  <= data_reg;
-    bits_o  <= bits_reg;
+    m_valid_o <= m_valid_reg;
+    s_valid_o <= s_valid_reg;
+    data_o    <= data_reg;
+    bits_o    <= bits_reg;
 
 end architecture rtl;
