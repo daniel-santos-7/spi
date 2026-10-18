@@ -18,25 +18,21 @@ entity spi_trx is
     port (
         clk_i      : in  std_logic;
         rst_i      : in  std_logic;
-
         start_i    : in  std_logic;
         stop_i     : in  std_logic;
         sample_i   : in  std_logic;
         shift_i    : in  std_logic;
-
-        role_i     : in  std_logic;  -- 1 = master: sample miso_i
-        miso_i     : in  std_logic;  -- not synchronised: master only, timed by our own SCK
-        mosi_i     : in  std_logic;  -- synchronised to clk_i (spi_sync does it)
-
-        tx_valid_i : in  std_logic;  -- client word, taken at start_i
+        role_i     : in  std_logic;
+        miso_i     : in  std_logic;
+        mosi_i     : in  std_logic;
+        tx_valid_i : in  std_logic;
         tx_data_i  : in  std_logic_vector(WIDTH-1 downto 0);
         tx_bits_i  : in  std_logic_vector(CNT_BITS-1 downto 0);
-
         mosi_o     : out std_logic;
         miso_o     : out std_logic;
         done_o     : out std_logic;
-        tx_ready_o : out std_logic;  -- word taken (start_i), to the client
-        rx_valid_o : out std_logic;  -- word received (stop_i), to the receive buffer
+        tx_ready_o : out std_logic;
+        rx_valid_o : out std_logic;
         rx_data_o  : out std_logic_vector(WIDTH-1 downto 0);
         rx_bits_o  : out std_logic_vector(CNT_BITS-1 downto 0)
     );
@@ -44,13 +40,13 @@ end entity spi_trx;
 
 architecture rtl of spi_trx is
 
-    signal bit_cnt_reg  : unsigned(CNT_BITS-1 downto 0);
-    signal rx_sh_reg    : std_logic_vector(WIDTH-1 downto 0);
-    signal tx_sh_reg    : std_logic_vector(WIDTH-1 downto 0);
-    signal tx_bits_reg  : std_logic_vector(CNT_BITS-1 downto 0);
-    signal din          : std_logic;
-    signal cnt_full     : std_logic;
-    signal done         : std_logic;
+    signal bit_cnt_reg : unsigned(CNT_BITS-1 downto 0);
+    signal rx_sh_reg   : std_logic_vector(WIDTH-1 downto 0);
+    signal tx_sh_reg   : std_logic_vector(WIDTH-1 downto 0);
+    signal tx_bits_reg : std_logic_vector(CNT_BITS-1 downto 0);
+    signal din         : std_logic;
+    signal cnt_full    : std_logic;
+    signal done        : std_logic;
 
 begin
 
@@ -58,16 +54,9 @@ begin
     assert 2**CNT_BITS > WIDTH report "SPI transceiver: CNT_BITS too small to count WIDTH." severity failure;
 
     din      <= miso_i when role_i = '1' else mosi_i;
-    -- WIDTH bits counted: the word is full, extra bits are dropped
     cnt_full <= '1' when bit_cnt_reg = WIDTH else '0';
-    -- tx_bits_reg is the master word's, held during its frame
     done     <= '1' when bit_cnt_reg = unsigned(tx_bits_reg) or cnt_full = '1' else '0';
 
-    -- TX shift register: the client word is taken at start_i (zeros
-    -- with no word, an underrun) and the bit sent is its MSB; it is
-    -- shifted up as it is sent, zeros coming in, so bits after the
-    -- WIDTH-th are 0. The bit count is the master word's, held during
-    -- its frame.
     tx_proc: process(clk_i)
     begin
         if rising_edge(clk_i) then
@@ -88,9 +77,6 @@ begin
         end if;
     end process tx_proc;
 
-    -- RX shift register and bit count: cleared once the word is out
-    -- (stop_i, where the receive buffer takes it), so every frame starts
-    -- from zero
     rx_proc: process(clk_i)
     begin
         if rising_edge(clk_i) then
