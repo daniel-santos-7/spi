@@ -38,7 +38,8 @@ architecture rtl of spi_buf is
 begin
 
     -- a word is taken while the buffer is empty or being read; one taken
-    -- in the cycle of a flush belongs to the new role and stays
+    -- in the cycle of a flush belongs to the new role and stays; an empty
+    -- buffer holds zeros
     buf_proc: process(clk_i)
     begin
         if rising_edge(clk_i) then
@@ -48,10 +49,17 @@ begin
                 bits_reg  <= (others => '0');
             elsif valid_reg = '0' or ready_i = '1' then
                 valid_reg <= valid_i;
-                data_reg  <= data_i;
-                bits_reg  <= bits_i;
+                if valid_i = '1' then
+                    data_reg <= data_i;
+                    bits_reg <= bits_i;
+                else
+                    data_reg <= (others => '0');
+                    bits_reg <= (others => '0');
+                end if;
             elsif flush_i = '1' then
                 valid_reg <= '0';
+                data_reg  <= (others => '0');
+                bits_reg  <= (others => '0');
             end if;
         end if;
     end process buf_proc;

@@ -15,7 +15,7 @@ rtl/spi_pkg.vhdl      package: bits_for and the generic defaults
 rtl/spi_sync.vhdl     two-flip-flop synchronisers for SCK, CS# and MOSI
 rtl/spi_edge.vhdl     slave edge detection on the synchronised CS# and SCK
 rtl/spi_ctrl.vhdl     control: role, FSM, master SCK/CS#, pin enables
-rtl/spi_buf.vhdl      one-word ready/valid buffer (one for TX, one for RX)
+rtl/spi_buf.vhdl      one-word ready/valid buffer, zeros when empty (one for TX, one for RX)
 rtl/spi_trx.vhdl      transceiver: transmit and receive shift registers, bit count
 rtl/spi_port.vhdl     structural top
 tbs/tb_spi_port.vhdl  self-checking testbench: two ports on one bus
@@ -57,7 +57,7 @@ The testbench connects two ports to one modelled bus. It runs random master/slav
 
 **Handshakes.** A write (`tx_valid_i` and `tx_ready_o`) goes into a one-word transmit buffer, which a frame empties as it starts (the word moves to the shift register). `tx_ready_o` is high while the buffer is empty, and in the cycle a frame starts; a write made during a frame waits in the buffer for the next one. A received word stays on `rx_*` until taken with `rx_ready_i`; one that arrives while the buffer is full is dropped. Keep `tx_valid_i` low during reset, as in AXI.
 
-**Role change and pending words.** A role change drops the words still pending in both buffers: a word not yet sent, and an unread received word, of either role. Read the last word before changing the role. A word belongs to the role `role_ack_o` shows in the cycle it is taken: the drop happens in the first cycle with the new `role_ack_o`, so a write taken in the cycle the change of `role_req_i` is seen (`role_ack_o` still old) is dropped too, and one taken from that first cycle on stays. A slave frame that starts in that first cycle (a `CS#` fall right after the switch, which only a colliding master can cause) is still taken, and sends zeros.
+**Role change and pending words.** A role change drops the words still pending in both buffers: a word not yet sent, and an unread received word, of either role. Read the last word before changing the role. A word belongs to the role `role_ack_o` shows in the cycle it is taken: the drop happens in the first cycle with the new `role_ack_o`, so a write taken in the cycle the change of `role_req_i` is seen (`role_ack_o` still old) is dropped too, and one taken from that first cycle on stays. A slave frame that starts in that first cycle (a `CS#` fall right after the switch, which only a colliding master can cause) is still taken, and sends the word written in the cycle of the switch, if any, since it reads the buffer before the drop.
 
 ## Master
 

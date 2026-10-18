@@ -57,8 +57,10 @@
 -- unread frame and becomes a slave again (its word dropped again).
 -- Last, a CS# fall lands in the cycle after A's strap drops (the flush
 -- cycle; the host forces CS# low against A, still a master, as in a
--- collision): A must take the frame as a slave, and send zeros, not the
--- word written in the cycle its strap dropped.
+-- collision): A must take the frame as a slave, and send the word
+-- written in the cycle its strap dropped (the start reads it before the
+-- flush can drop it). With the CS# fall one cycle later (in S_IDLE) that
+-- word is flushed and the frame must send zeros, not the flushed word.
 --
 -- Checks: every word and bit count the slave reports, the
 -- words the master receives (the first tx_bits bits of the reply),
@@ -153,8 +155,8 @@ architecture sim of tb_spi_port is
     signal host_resp : word_t    := (others => '0');
     signal host_wr   : std_logic := '0';
     signal host_rd   : std_logic := '0';
-    signal host_to_b : std_logic := '1';
     signal rx_free   : std_logic := '1';
+    signal host_to_b : std_logic := '1';
     signal cs_ovr    : std_logic := '0';
     signal hw_n      : natural   := 0;
     signal hw_data   : word_arr_t(0 to HOST_WORDS-1);
@@ -815,15 +817,16 @@ begin
             report "TB: master to slave did not drop only A's unread word" severity error;
 
         -- a CS# fall in A's flush cycle: the host forces CS# low against A,
-        -- then the strap drops with a write to A (still a master); A sees
-        -- the fall in S_FLUSH and must take the frame, sending zeros
+        -- then the strap drops with a write to A (still a master) and to B
+        -- (a slave, so both send the same word); A sees the fall in S_FLUSH
+        -- and must take the frame, sending the word: the start reads it
+        -- before the flush
         strap_a <= '1';
         cycles(10);
         rnd_bits(hbits);
         rnd_bits(resp);
         resp(WIDTH-1) := '1';
         host_en   <= '1';
-        host_to_b <= '0';
         cs_ovr    <= '1';
         host_cs_n <= '0';
         cycles(1);
@@ -851,12 +854,56 @@ begin
         exp_rx := (others => '0');
         for i in 0 to WIDTH-1 loop
             exp_rx(WIDTH-1-i) := hbits(HOST_MAX-1-i);
-            assert hrx(HOST_MAX-1-i) = '0'
-                report "TB: frame from S_FLUSH, reply bit " & integer'image(i) & " is not 0" severity error;
+            assert hrx(HOST_MAX-1-i) = resp(WIDTH-1-i)
+                report "TB: frame from S_FLUSH, reply bit " & integer'image(i) & " wrong" severity error;
         end loop;
         assert a_role_ack = '0' and a_tx_ready = '1' and a_rx_valid = '1' and
                to_integer(unsigned(a_rx_bits)) = WIDTH and a_rx_data = exp_rx
-            report "TB: CS# fall in the flush cycle lost, or the dropped word kept" severity error;
+            report "TB: CS# fall in the flush cycle lost" severity error;
+        host_en   <= '0';
+
+        -- the same with the CS# fall one cycle later, after the flush: the
+        -- word written to A (only) as its strap drops is flushed, and the
+        -- frame A takes from S_IDLE must send zeros
+        strap_a <= '1';
+        cycles(10);
+        rnd_bits(hbits);
+        rnd_bits(resp);
+        resp(WIDTH-1) := '1';
+        host_en   <= '1';
+        host_to_b <= '0';
+        cs_ovr    <= '1';
+        host_cs_n <= '0';
+        strap_a   <= '0';
+        host_resp <= resp;
+        host_wr   <= '1';
+        cycles(1);
+        assert a_tx_ready = '1'
+            report "TB: write not taken in the cycle of A's role change" severity error;
+        host_wr <= '0';
+        cycles(SCK_DIV);
+        cs_ovr  <= '0';
+        for i in 0 to WIDTH-1 loop
+            host_mosi <= hbits(HOST_MAX-1-i);
+            cycles(SCK_DIV);
+            host_sclk <= '1';
+            hrx(HOST_MAX-1-i) := miso_in;
+            cycles(SCK_DIV);
+            host_sclk <= '0';
+        end loop;
+        cycles(SCK_DIV);
+        host_cs_n <= '1';
+        host_mosi <= '0';
+        cycles(10);
+        exp_rx := (others => '0');
+        for i in 0 to WIDTH-1 loop
+            exp_rx(WIDTH-1-i) := hbits(HOST_MAX-1-i);
+            assert hrx(HOST_MAX-1-i) = '0'
+                report "TB: frame after the flush, reply bit " & integer'image(i) & " is not 0" severity error;
+        end loop;
+        assert a_role_ack = '0' and a_tx_ready = '1' and a_rx_valid = '1' and
+               to_integer(unsigned(a_rx_bits)) = WIDTH and a_rx_data = exp_rx
+            report "TB: CS# fall after the flush lost, or the flushed word kept" severity error;
         host_en   <= '0';
         host_to_b <= '1';
 
