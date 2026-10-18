@@ -56,7 +56,7 @@ The testbench connects two ports to one modelled bus. It runs random master/slav
 
 **Handshakes.** A write (`tx_valid_i` and `tx_ready_o`) goes into a one-word transmit buffer; `tx_ready_o` is high while the buffer is empty, in a frame or not. The word stays in the buffer until the end of the frame that sends it; a write offered then is taken in that same cycle. A received word stays on `rx_*` until taken with `rx_ready_i`; one that arrives while the buffer is full is dropped. Keep `tx_valid_i` low during reset, as in AXI.
 
-**Role change and pending words.** A role change drops the words still pending: a slave reply not yet sent, and an unread word in the receive buffer, of either role. Read the last word before changing the role. A write taken in the cycle the role changes belongs to the new role and stays.
+**Role change and pending words.** A role change drops the words still pending: a slave reply not yet sent, and an unread word in the receive buffer, of either role. Read the last word before changing the role. A word belongs to the role `role_ack_o` shows in the cycle it is taken: the drop happens in the first cycle with the new `role_ack_o`, so a write taken in the cycle the change of `role_req_i` is seen (`role_ack_o` still old) is dropped too, and one taken from that first cycle on stays. A slave frame that starts in that first cycle (a `CS#` fall right after the switch, which only a colliding master can cause) is still taken, and sends zeros.
 
 ## Master
 

@@ -42,7 +42,7 @@ end entity spi_ctrl;
 
 architecture rtl of spi_ctrl is
 
-    type state_t is (S_IDLE, S_FRAME, M_IDLE, M_SCK_LO, M_SCK_HI, M_END);
+    type state_t is (S_IDLE, S_FLUSH, S_FRAME, M_IDLE, M_FLUSH, M_SCK_LO, M_SCK_HI, M_END);
 
     -- bits needed to hold n (at least 1)
     function bits_for(n : natural) return positive is
@@ -63,6 +63,7 @@ architecture rtl of spi_ctrl is
     signal cs_n_reg     : std_logic;
     signal s_drv_en_reg : std_logic;
     signal role_reg     : std_logic;
+    signal flush_reg    : std_logic;
     signal cnt_en_reg   : std_logic;
     signal cnt_end      : std_logic;
 
@@ -90,15 +91,27 @@ begin
                 cnt_en_reg   <= '0';
                 s_drv_en_reg <= '0';
                 role_reg     <= '0';
+                flush_reg    <= '0';
             else
+                flush_reg <= '0';
                 case state_reg is
                     when S_IDLE =>
                         if cs_n_fall_i = '1' then
                             state_reg    <= S_FRAME;
                             s_drv_en_reg <= '1';
                         elsif role_req_i = '1' then
-                            state_reg <= M_IDLE;
+                            state_reg <= M_FLUSH;
                             role_reg  <= '1';
+                            flush_reg <= '1';
+                        end if;
+                    when S_FLUSH =>
+                        -- a CS# fall is never lost: the frame starts here,
+                        -- sending zeros (the TX word is being flushed)
+                        if cs_n_fall_i = '1' then
+                            state_reg    <= S_FRAME;
+                            s_drv_en_reg <= '1';
+                        else
+                            state_reg <= S_IDLE;
                         end if;
                     when S_FRAME =>
                         if cs_n_rise_i = '1' then
@@ -111,9 +124,12 @@ begin
                             cs_n_reg   <= '0';
                             cnt_en_reg <= '1';
                         elsif role_req_i = '0' then
-                            state_reg <= S_IDLE;
+                            state_reg <= S_FLUSH;
                             role_reg  <= '0';
+                            flush_reg <= '1';
                         end if;
+                    when M_FLUSH =>
+                        state_reg <= M_IDLE;
                     when M_SCK_LO =>
                         if cnt_end = '1' then
                             state_reg <= M_SCK_HI;
@@ -159,13 +175,13 @@ begin
     m_fall  <= '1' when state_reg = M_SCK_HI and cnt_end    = '1' else '0';
 
     -- slave strobes, qualified by state the same way
-    s_start <= '1' when state_reg = S_IDLE  and cs_n_fall_i = '1' else '0';
+    s_start <= '1' when (state_reg = S_IDLE or state_reg = S_FLUSH) and cs_n_fall_i = '1' else '0';
     s_stop  <= '1' when state_reg = S_FRAME and cs_n_rise_i = '1' else '0';
     s_rise  <= '1' when state_reg = S_FRAME and sclk_rise_i = '1' else '0';
     s_fall  <= '1' when state_reg = S_FRAME and sclk_fall_i = '1' else '0';
-    -- a slave frame sends the reply if the TX buffer holds one; with none
-    -- it sends zeros
-    s_send  <= s_start and tx_valid_i;
+    -- a slave frame sends the reply if the TX buffer holds one; with none,
+    -- or from S_FLUSH (the word is being dropped), it sends zeros
+    s_send  <= '1' when state_reg = S_IDLE and cs_n_fall_i = '1' and tx_valid_i = '1' else '0';
 
     role_ack_o <= role_reg;
     role_o     <= role_reg;
@@ -175,10 +191,9 @@ begin
     cs_n_oe    <= role_reg;
     mosi_oe    <= role_reg;
     miso_oe    <= s_drv_en_reg;  -- exactly in S_FRAME
-    -- words still pending when the role changes are dropped (leaving
-    -- M_IDLE, the TX buffer is already empty)
-    flush_o    <= '1' when (state_reg = S_IDLE and cs_n_fall_i = '0' and role_req_i = '1') or
-                           (state_reg = M_IDLE and tx_valid_i  = '0' and role_req_i = '0') else '0';
+    -- the words taken while role_ack_o still showed the old role are
+    -- dropped in the first cycle of the new one
+    flush_o    <= flush_reg;  -- exactly in S_FLUSH and M_FLUSH
     start_o    <= m_start or s_start;
     stop_o     <= m_stop or s_stop;
     sample_o   <= m_rise or s_rise;  -- mode 0: sample on SCK rise

@@ -20,8 +20,10 @@
 -- write wins, A must finish the frame as master and only then become a
 -- slave, without its own CS# rise reaching its slave logic. Between
 -- phases a reply written to B as a slave must be dropped when B becomes
--- a master (no frame); B goes back to slave and becomes a master again
--- in the cycle of its first write, which must stay.
+-- a master (no frame), and so must a write taken in the cycle B's strap
+-- rises (role_ack still shows a slave); B goes back to slave each time,
+-- and its first write as a master, offered in the cycle after its strap
+-- rises (the flush cycle), must stay.
 -- Every frame is one word of random data from the master, answered by
 -- a random reply word from the slave, with a random tx_bits: mostly 1
 -- to WIDTH bits, sometimes 0 or more than WIDTH, which must give WIDTH
@@ -55,6 +57,10 @@
 -- next one normally. At the end the host leaves an unread word in both
 -- slaves; A becomes a master (its word dropped, B's kept), masters an
 -- unread frame and becomes a slave again (its word dropped again).
+-- Last, a CS# fall lands in the cycle after A's strap drops (the flush
+-- cycle; the host forces CS# low against A, still a master, as in a
+-- collision): A must take the frame as a slave, and send zeros, not the
+-- word written in the cycle its strap dropped.
 --
 -- Checks: every word and bit count the slave reports, the
 -- words the master receives (the first tx_bits bits of the reply),
@@ -152,6 +158,8 @@ architecture sim of tb_spi_port is
     signal host_wr   : std_logic := '0';
     signal host_rd   : std_logic := '0';
     signal rx_free   : std_logic := '1';
+    signal host_to_b : std_logic := '1';
+    signal cs_ovr    : std_logic := '0';
     signal hw_n      : natural   := 0;
     signal hw_data   : word_arr_t(0 to HOST_WORDS-1);
     signal hw_bits   : nat_arr_t(0 to HOST_WORDS-1);
@@ -325,7 +333,8 @@ begin
     miso_pad <= 'L';
 
     sclk_in <= to_x01(sclk_pad);
-    cs_n_in <= to_x01(cs_n_pad);
+    -- cs_ovr: the host wins over a master driving CS# (collision model)
+    cs_n_in <= host_cs_n when cs_ovr = '1' else to_x01(cs_n_pad);
     mosi_in <= to_x01(mosi_pad);
     miso_in <= to_x01(miso_pad);
 
@@ -335,7 +344,7 @@ begin
     a_tx_valid   <= host_wr   when host_en = '1' else m_tx_valid when swap = '0' else s_tx_valid;
     a_tx_data    <= host_resp when host_en = '1' else m_tx_data  when swap = '0' else s_tx_data;
     a_tx_bits    <= m_tx_bits when host_en = '0' and swap = '0' else (others => '1');
-    b_tx_valid   <= host_wr   when host_en = '1' else m_tx_valid when swap = '1' else s_tx_valid;
+    b_tx_valid   <= host_wr and host_to_b when host_en = '1' else m_tx_valid when swap = '1' else s_tx_valid;
     b_tx_data    <= host_resp when host_en = '1' else m_tx_data  when swap = '1' else s_tx_data;
     b_tx_bits    <= m_tx_bits when host_en = '0' and swap = '1' else (others => '1');
     m_tx_ready   <= a_tx_ready   when swap = '0' else b_tx_ready;
@@ -458,6 +467,19 @@ begin
                     report "TB: B kept or sent the slave reply after becoming a master" severity error;
                 strap_b <= '0';
                 cycles(10);
+                -- a write taken in the cycle B's strap rises is a slave reply
+                -- (role_ack still 0): dropped too
+                m_tx_valid <= '1';
+                strap_b    <= '1';
+                cycles(1);
+                assert b_tx_ready = '1'
+                    report "TB: write not taken in the cycle of B's role change" severity error;
+                m_tx_valid <= '0';
+                cycles(10);
+                assert b_tx_ready = '1' and b_role_ack = '1' and cs_n_in = '1'
+                    report "TB: B kept or sent a write taken in the cycle of its role change" severity error;
+                strap_b <= '0';
+                cycles(10);
                 report "TB: roles swapped, A is slave and B is master" severity note;
             end if;
 
@@ -503,12 +525,13 @@ begin
 
                 m_tx_data  <= mtx;
                 m_tx_bits  <= std_logic_vector(to_unsigned(len, CNT_BITS));
-                m_tx_valid <= '1';
                 if ph = 1 and f = 1 then
-                    -- B becomes a master in the cycle of its first write:
-                    -- the write belongs to the new role and must stay
+                    -- B's first write as a master comes in the flush cycle,
+                    -- the one after its strap rises: it must stay
                     strap_b <= '1';
+                    cycles(1);
                 end if;
+                m_tx_valid <= '1';
                 loop
                     wait until rising_edge(clk);
                     exit when m_tx_ready = '1';
@@ -800,6 +823,52 @@ begin
         assert a_role_ack = '0' and a_rx_valid = '0' and b_rx_valid = '1'
             report "TB: master to slave did not drop only A's unread word" severity error;
 
+        -- a CS# fall in A's flush cycle: the host forces CS# low against A,
+        -- then the strap drops with a write to A (still a master); A sees
+        -- the fall in S_FLUSH and must take the frame, sending zeros
+        strap_a <= '1';
+        cycles(10);
+        rnd_bits(hbits);
+        rnd_bits(resp);
+        resp(WIDTH-1) := '1';
+        host_en   <= '1';
+        host_to_b <= '0';
+        cs_ovr    <= '1';
+        host_cs_n <= '0';
+        cycles(1);
+        strap_a   <= '0';
+        host_resp <= resp;
+        host_wr   <= '1';
+        cycles(1);
+        assert a_tx_ready = '1'
+            report "TB: write not taken in the cycle of A's role change" severity error;
+        host_wr <= '0';
+        cycles(SCK_DIV);
+        cs_ovr  <= '0';  -- A has released CS#: the host drives the pad
+        for i in 0 to WIDTH-1 loop
+            host_mosi <= hbits(HOST_MAX-1-i);
+            cycles(SCK_DIV);
+            host_sclk <= '1';
+            hrx(HOST_MAX-1-i) := miso_in;
+            cycles(SCK_DIV);
+            host_sclk <= '0';
+        end loop;
+        cycles(SCK_DIV);
+        host_cs_n <= '1';
+        host_mosi <= '0';
+        cycles(10);
+        exp_rx := (others => '0');
+        for i in 0 to WIDTH-1 loop
+            exp_rx(WIDTH-1-i) := hbits(HOST_MAX-1-i);
+            assert hrx(HOST_MAX-1-i) = '0'
+                report "TB: frame from S_FLUSH, reply bit " & integer'image(i) & " is not 0" severity error;
+        end loop;
+        assert a_role_ack = '0' and a_tx_ready = '1' and a_rx_valid = '1' and
+               to_integer(unsigned(a_rx_bits)) = WIDTH and a_rx_data = exp_rx
+            report "TB: CS# fall in the flush cycle lost, or the dropped word kept" severity error;
+        host_en   <= '0';
+        host_to_b <= '1';
+
         assert n_b2b > 0 and n_held > 0 and n_mshrt > 0 and n_mclip > 0
             report "TB: coverage hole (back-to-back, held, shorter or clipped master frame)" severity error;
         report "TB: PASS - " & integer'image(frame) & " master frames, " & integer'image(word) & " words of " &
@@ -1015,7 +1084,7 @@ begin
                     report "bus: tx_ready high during a frame" severity error;
             end if;
             -- the role changes only between frames
-            assert (a_role_ack = a_ack and b_role_ack = b_ack) or cs_n_in = '1'
+            assert (a_role_ack = a_ack and b_role_ack = b_ack) or cs_n_in = '1' or cs_ovr = '1'
                 report "bus: role_ack changed while CS# is low" severity error;
             if iso_check = '1' then
                 assert (a_role_ack = '1' and b_role_ack = '0' and swap = '0') or
