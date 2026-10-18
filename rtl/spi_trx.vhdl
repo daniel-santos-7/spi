@@ -16,24 +16,22 @@ entity spi_trx is
         CNT_BITS : positive := DEF_CNT_BITS
     );
     port (
-        clk_i      : in  std_logic;
-        rst_i      : in  std_logic;
-        start_i    : in  std_logic;
-        stop_i     : in  std_logic;
-        sample_i   : in  std_logic;
-        shift_i    : in  std_logic;
-        role_i     : in  std_logic;
-        miso_i     : in  std_logic;
-        mosi_i     : in  std_logic;
-        tx_data_i  : in  std_logic_vector(WIDTH-1 downto 0);
-        tx_bits_i  : in  std_logic_vector(CNT_BITS-1 downto 0);
-        mosi_o     : out std_logic;
-        miso_o     : out std_logic;
-        done_o     : out std_logic;
-        tx_ready_o : out std_logic;
-        rx_valid_o : out std_logic;
-        rx_data_o  : out std_logic_vector(WIDTH-1 downto 0);
-        rx_bits_o  : out std_logic_vector(CNT_BITS-1 downto 0)
+        clk_i     : in  std_logic;
+        rst_i     : in  std_logic;
+        start_i   : in  std_logic;
+        stop_i    : in  std_logic;
+        sample_i  : in  std_logic;
+        shift_i   : in  std_logic;
+        role_i    : in  std_logic;
+        miso_i    : in  std_logic;
+        mosi_i    : in  std_logic;
+        tx_data_i : in  std_logic_vector(WIDTH-1 downto 0);
+        tx_bits_i : in  std_logic_vector(CNT_BITS-1 downto 0);
+        mosi_o    : out std_logic;
+        miso_o    : out std_logic;
+        done_o    : out std_logic;
+        rx_data_o : out std_logic_vector(WIDTH-1 downto 0);
+        rx_bits_o : out std_logic_vector(CNT_BITS-1 downto 0)
     );
 end entity spi_trx;
 
@@ -87,12 +85,10 @@ begin
         end if;
     end process rx_proc;
 
-    mosi_o     <= tx_sh_reg(WIDTH-1);
-    miso_o     <= tx_sh_reg(WIDTH-1);
-    done_o     <= done;
-    tx_ready_o <= start_i;
-    rx_valid_o <= stop_i;
-    rx_data_o  <= rx_sh_reg;
-    rx_bits_o  <= std_logic_vector(bit_cnt_reg);
+    mosi_o    <= tx_sh_reg(WIDTH-1);
+    miso_o    <= tx_sh_reg(WIDTH-1);
+    done_o    <= done;
+    rx_data_o <= rx_sh_reg;
+    rx_bits_o <= std_logic_vector(bit_cnt_reg);
 
 end architecture rtl;

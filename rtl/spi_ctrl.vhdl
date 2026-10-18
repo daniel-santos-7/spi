@@ -36,7 +36,9 @@ entity spi_ctrl is
         start_o     : out std_logic;
         stop_o      : out std_logic;
         sample_o    : out std_logic;
-        shift_o     : out std_logic
+        shift_o     : out std_logic;
+        tx_ready_o  : out std_logic;
+        rx_valid_o  : out std_logic
     );
 end entity spi_ctrl;
 
@@ -177,5 +179,7 @@ begin
     stop_o     <= m_stop or s_stop;
     sample_o   <= m_rise or s_rise;
     shift_o    <= m_fall or s_fall;
+    tx_ready_o <= m_start or s_start;
+    rx_valid_o <= m_stop or s_stop;
 
 end architecture rtl;
