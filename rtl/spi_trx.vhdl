@@ -81,34 +81,27 @@ begin
     -- sent, zeros coming in, and cleared once used or flushed, so with no
     -- word the buffer is all zeros and a frame without a reply sends
     -- zeros. A word taken in a flush state belongs to the new role and
-    -- stays. The clear comes first for tx_sh_reg, so it maps onto the
-    -- flip-flops' synchronous reset.
+    -- stays. The clear comes first, so it maps onto the flip-flops'
+    -- synchronous reset.
     tx_proc: process(clk_i)
     begin
         if rising_edge(clk_i) then
             if rst_i = '1' then
-                busy_reg     <= '0';
-                tx_valid_reg <= '0';
-                tx_bits_reg  <= (others => '0');
-            else
-                if start_i = '1' then
-                    busy_reg <= '1';
-                elsif stop_i = '1' then
-                    busy_reg <= '0';
-                end if;
-
-                if tx_load = '1' then
-                    tx_valid_reg <= '1';
-                    tx_bits_reg  <= tx_bits_i;
-                elsif tx_clr = '1' then
-                    tx_valid_reg <= '0';
-                end if;
+                busy_reg <= '0';
+            elsif start_i = '1' then
+                busy_reg <= '1';
+            elsif stop_i = '1' then
+                busy_reg <= '0';
             end if;
 
             if rst_i = '1' or tx_clr = '1' then
-                tx_sh_reg <= (others => '0');
+                tx_valid_reg <= '0';
+                tx_sh_reg    <= (others => '0');
+                tx_bits_reg  <= (others => '0');
             elsif tx_load = '1' then
-                tx_sh_reg <= tx_data_i;
+                tx_valid_reg <= '1';
+                tx_sh_reg    <= tx_data_i;
+                tx_bits_reg  <= tx_bits_i;
             elsif shift_i = '1' then
                 tx_sh_reg <= tx_sh_reg(WIDTH-2 downto 0) & '0';
             end if;
