@@ -22,7 +22,7 @@ entity spi_ctrl is
         cs_n_rise_i : in  std_logic;
         sclk_rise_i : in  std_logic;
         sclk_fall_i : in  std_logic;
-        tx_valid_i  : in  std_logic;  -- the client offers a word: the master starts a frame
+        tx_valid_i  : in  std_logic;  -- the TX buffer holds a word
         done_i      : in  std_logic;
         role_ack_o  : out std_logic;  -- role in effect (1 = master)
         role_o      : out std_logic;  -- the same, to spi_trx
@@ -32,7 +32,7 @@ entity spi_ctrl is
         cs_n_oe     : out std_logic;
         mosi_oe     : out std_logic;
         miso_oe     : out std_logic;
-        flush_o     : out std_logic;  -- role change: drop the word pending in the RX buffer
+        flush_o     : out std_logic;  -- role change: drop the words pending in both buffers
         start_o     : out std_logic;
         stop_o      : out std_logic;
         sample_o    : out std_logic;
@@ -176,7 +176,7 @@ begin
     cs_n_oe    <= role_reg;
     mosi_oe    <= role_reg;
     miso_oe    <= s_drv_en_reg;  -- exactly in S_FRAME
-    -- a word received while role_ack_o still showed the old role is
+    -- the words taken while role_ack_o still showed the old role are
     -- dropped in the first cycle of the new one
     flush_o    <= flush_reg;  -- exactly in S_FLUSH and M_FLUSH
     start_o    <= m_start or s_start;

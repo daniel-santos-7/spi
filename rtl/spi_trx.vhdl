@@ -22,6 +22,7 @@ entity spi_trx is
         stop_i     : in  std_logic;
         sample_i   : in  std_logic;
         shift_i    : in  std_logic;
+        flush_i    : in  std_logic;
         role_i     : in  std_logic;
         miso_i     : in  std_logic;
         mosi_i     : in  std_logic;
@@ -64,7 +65,7 @@ begin
                 tx_sh_reg   <= (others => '0');
                 tx_bits_reg <= (others => '0');
             elsif start_i = '1' then
-                if tx_valid_i = '1' then
+                if tx_valid_i = '1' and flush_i = '0' then
                     tx_sh_reg   <= tx_data_i;
                     tx_bits_reg <= tx_bits_i;
                 else
