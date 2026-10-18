@@ -68,12 +68,17 @@ begin
     tx_proc: process(clk_i)
     begin
         if rising_edge(clk_i) then
-            if rst_i = '1' or (start_i = '1' and tx_valid_i = '0') then
+            if rst_i = '1' then
                 tx_sh_reg   <= (others => '0');
                 tx_bits_reg <= (others => '0');
             elsif start_i = '1' then
-                tx_sh_reg   <= tx_data_i;
-                tx_bits_reg <= tx_bits_i;
+                if tx_valid_i = '1' then
+                    tx_sh_reg   <= tx_data_i;
+                    tx_bits_reg <= tx_bits_i;
+                else
+                    tx_sh_reg   <= (others => '0');
+                    tx_bits_reg <= (others => '0');
+                end if;
             elsif shift_i = '1' then
                 tx_sh_reg <= tx_sh_reg(WIDTH-2 downto 0) & '0';
             end if;
