@@ -49,6 +49,7 @@ architecture rtl of spi_trx is
     signal tx_sh_reg    : std_logic_vector(WIDTH-1 downto 0);
     signal tx_bits_reg  : std_logic_vector(CNT_BITS-1 downto 0);
     signal din          : std_logic;
+    signal cnt_full     : std_logic;
     signal done         : std_logic;
 
 begin
@@ -56,9 +57,11 @@ begin
     assert WIDTH >= 2 report "SPI transceiver: WIDTH must be at least 2." severity failure;
     assert 2**CNT_BITS > WIDTH report "SPI transceiver: CNT_BITS too small to count WIDTH." severity failure;
 
-    din  <= miso_i when role_i = '1' else mosi_i;
+    din      <= miso_i when role_i = '1' else mosi_i;
+    -- WIDTH bits counted: the word is full, extra bits are dropped
+    cnt_full <= '1' when bit_cnt_reg = WIDTH else '0';
     -- tx_bits_reg is the master word's, held during its frame
-    done <= '1' when bit_cnt_reg = unsigned(tx_bits_reg) or bit_cnt_reg = WIDTH else '0';
+    done     <= '1' when bit_cnt_reg = unsigned(tx_bits_reg) or cnt_full = '1' else '0';
 
     -- TX shift register: the client word is taken at start_i (zeros
     -- with no word, an underrun) and the bit sent is its MSB; it is
@@ -94,7 +97,7 @@ begin
             elsif start_i = '1' then
                 bit_cnt_reg <= (others => '0');
                 rx_sh_reg   <= (others => '0');
-            elsif sample_i = '1' and bit_cnt_reg /= WIDTH then
+            elsif sample_i = '1' and cnt_full = '0' then
                 bit_cnt_reg <= bit_cnt_reg + 1;
                 rx_sh_reg   <= rx_sh_reg(WIDTH-2 downto 0) & din;
             end if;
