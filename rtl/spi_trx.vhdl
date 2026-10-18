@@ -55,8 +55,6 @@ architecture rtl of spi_trx is
     signal din          : std_logic;
     signal done         : std_logic;
     signal tx_used      : std_logic;
-    signal tx_ready     : std_logic;
-    signal tx_load      : std_logic;
     signal tx_clr       : std_logic;
 
 begin
@@ -69,20 +67,12 @@ begin
     done <= '1' when bit_cnt_reg = unsigned(tx_bits_reg) or bit_cnt_reg = WIDTH else '0';
 
     -- the TX word is used once a frame has sent it (an empty slave frame
-    -- sent nothing: the reply stays); a word is taken at any time between
-    -- frames, replacing the one held (the last write wins)
-    tx_used  <= '1' when stop_i = '1' and tx_valid_reg = '1' and bit_cnt_reg /= 0 else '0';
-    tx_ready <= not busy_reg;
-    tx_load  <= tx_ready and tx_valid_i;
-    tx_clr   <= (tx_used or flush_i) and not tx_load;
+    -- sent nothing: the reply stays), and dropped by a flush unless a
+    -- write comes in that cycle (a flush only comes between frames, and a
+    -- stop never takes a write)
+    tx_used <= '1' when stop_i = '1' and tx_valid_reg = '1' and bit_cnt_reg /= 0 else '0';
+    tx_clr  <= tx_used or (flush_i and not tx_valid_i);
 
-    -- One-word TX buffer, ready/valid, which is also the TX shift
-    -- register: the bit sent is its MSB. A word is shifted up as it is
-    -- sent, zeros coming in, and cleared once used or flushed, so with no
-    -- word the buffer is all zeros and a frame without a reply sends
-    -- zeros. A word taken in a flush state belongs to the new role and
-    -- stays. The clear comes first, so it maps onto the flip-flops'
-    -- synchronous reset.
     -- 1 during a frame: no TX word is taken then
     busy_proc: process(clk_i)
     begin
@@ -95,6 +85,13 @@ begin
         end if;
     end process busy_proc;
 
+    -- One-word TX buffer, ready/valid, which is also the TX shift
+    -- register: the bit sent is its MSB. A word is shifted up as it is
+    -- sent, zeros coming in, and cleared once used or flushed, so with no
+    -- word the buffer is all zeros and a frame without a reply sends
+    -- zeros. A word taken in a flush state belongs to the new role and
+    -- stays. The clear comes first, so it maps onto the flip-flops'
+    -- synchronous reset.
     tx_proc: process(clk_i)
     begin
         if rising_edge(clk_i) then
@@ -102,7 +99,9 @@ begin
                 tx_valid_reg <= '0';
                 tx_sh_reg    <= (others => '0');
                 tx_bits_reg  <= (others => '0');
-            elsif tx_load = '1' then
+            elsif busy_reg = '0' and tx_valid_i = '1' then
+                -- a write between frames replaces the word held: the last
+                -- write wins
                 tx_valid_reg <= '1';
                 tx_sh_reg    <= tx_data_i;
                 tx_bits_reg  <= tx_bits_i;
@@ -128,7 +127,7 @@ begin
     mosi_o     <= tx_sh_reg(WIDTH-1);
     miso_o     <= tx_sh_reg(WIDTH-1);
     done_o     <= done;
-    tx_ready_o <= tx_ready;
+    tx_ready_o <= not busy_reg;
     tx_valid_o <= tx_valid_reg;
     rx_valid_o <= stop_i;
     rx_data_o  <= rx_sh_reg;
