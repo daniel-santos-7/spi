@@ -16,8 +16,9 @@
 -- 1 has the roles the other way round; phase 2 picks the master at
 -- random frame by frame. In one phase 2 frame the next frame is offered
 -- on the other port while the current one is still running: that port
--- is the slave of the current frame, must hold m_tx_ready low until it
--- is over and then start its own frame. In another, the master client
+-- is the slave of the current frame, takes the word into its TX buffer
+-- (the frame took its reply out as it started) and must wait for the
+-- bus to start its own. In another, the master client
 -- leaves its word unread (m_rx_valid high) while the same port is the slave of
 -- the next frame: both roles share one receive buffer, so the held word
 -- must stay and the slave word must be dropped.
@@ -27,20 +28,22 @@
 -- bits. The master client sometimes starts the next frame as soon as
 -- the last one is reported, otherwise it waits a random gap. The slave
 -- client writes the reply of a frame once the previous frame in which
--- the same port was a slave has been reported, so a reply often waits
--- through a master frame of its own port and must survive it.
+-- the same port was a slave has been reported. Both TX channels of a
+-- port share one buffer word: a ready is high while the buffer is free,
+-- only one at a time (a round robin grant), so a pending reply blocks
+-- master writes and a pending master word blocks replies. In one phase 2
+-- frame the next master word is offered to the slave port just as it
+-- sees CS# fall: it must run the slave frame first and then its own.
 --
 -- Phase 3 drives the pins from a software host, both ports slaves, with frames of any length (empty, shorter, equal and
 -- longer than WIDTH). Each frame must be reported as one word: the
 -- first WIDTH bits, with a count of WIDTH for a longer frame. The host
 -- writes one reply word per frame, so any bit after the WIDTH-th must
--- be 0. One host frame, after a shorter one, goes out with no reply
--- written (underrun) and must send zeros, not the reply of the shorter
--- frame; the reply written before the empty frame must go out in the
--- next one; a reply written in the very cycle a frame starts must go
--- out in that frame; a reply offered during a frame must not be taken
--- (s_tx_ready stays low while CS# is low, also after the reset in the
--- middle of a frame, and high between frames).
+-- be 0. A frame takes its reply out of the TX buffer as it starts, so
+-- the empty frame uses its reply up: the next frame, and one more later,
+-- get none (underrun) and must send zeros; a reply written during such a
+-- frame, or on the edge a frame starts, must wait and go out in the next
+-- frame, and a second one offered meanwhile must not be taken.
 -- Both slaves get the same reply, so MISO
 -- contention is not checked in this phase (every reply bit the host
 -- samples is). The host reads every word as it is reported, except
@@ -49,8 +52,8 @@
 -- In one host frame both ports are reset halfway through: with CS#
 -- still low after the reset they must stay out of that frame (no word
 -- reported, MISO not driven during the reset nor after it) and take the
--- next one normally; A is offered a master frame after the reset and
--- must not take it while CS# is low.
+-- next one normally. In another, A is offered a master frame with the
+-- bus free while its reply waits: it must not take it.
 --
 -- Checks: every word and bit count the slave reports, the
 -- words and bit counts the master receives (the first tx_bits bits of
@@ -59,9 +62,9 @@
 -- master frame seen as a slave frame), CS# high time, SCK phases, MOSI/MISO changing
 -- only while SCK is low, frame length, pad contention, that SCK/CS#/MOSI
 -- are driven by the master of the frame only and released between
--- frames, MISO by the slave only, and that m_tx_ready and s_tx_ready
--- are low while CS# is low (look before driving, up to the synchroniser
--- latency): no write of either kind is taken during a frame.
+-- frames, MISO by the slave only, that the two TX readies of a port
+-- are never high together, only drop when a write is taken or the other
+-- channel waits, and are back as a master frame takes its word.
 --
 ----------------------------------------------------------------------
 
@@ -88,6 +91,7 @@ architecture sim of tb_spi_port is
     constant MISO_LAT   : integer := 3;
     constant EARLY_F    : integer := 3;
     constant HOLD_F     : integer := 6;
+    constant TIE_F      : integer := 9;
     constant B2B_HI     : integer := 4;
     constant FRAME_CYC  : integer := 2 * WIDTH * SCK_DIV;
     constant HOST_MAX   : integer := 2 * WIDTH + 8;
@@ -95,6 +99,7 @@ architecture sim of tb_spi_port is
     constant HOST_HOLD  : integer := 6;
     constant HOST_TIE   : integer := 8;
     constant HOST_RST   : integer := 10;
+    constant HOST_BLK   : integer := 12;
     constant MAX_FRAMES : integer := 3 * NUM_FRAMES + 1;
     constant MAX_WORDS  : integer := MAX_FRAMES;
     constant HOST_WORDS : integer := 4 * HOST_FRAMES;
@@ -235,7 +240,7 @@ architecture sim of tb_spi_port is
     signal s_rx_wcnt  : natural := 0;
     signal s_rx_fcnt  : natural := 0;
     signal s_wdone    : natural;
-    signal n_surv     : natural := 0;
+    signal n_gnt      : natural := 0;
     signal n_wait     : natural := 0;
 
     -- test plan, per word and per frame
@@ -249,6 +254,7 @@ architecture sim of tb_spi_port is
     signal plan_b2b   : std_logic_vector(0 to MAX_FRAMES-1) := (others => '0');
     signal plan_swap  : std_logic_vector(0 to MAX_WORDS)    := (others => '0');  -- 1 = B master, A slave
     signal plan_sprev : int_arr_t(0 to MAX_WORDS)           := (others => -1);   -- slave port's previous word
+    signal plan_nrep  : std_logic_vector(0 to MAX_WORDS)    := (others => '0');  -- no reply written (underrun)
 
 begin
 
@@ -400,8 +406,6 @@ begin
         variable b2b     : boolean := false;
         variable mtx     : word_t;
         variable resp    : word_t;
-        variable prev    : word_t := (others => '0');
-        variable prev_n  : integer := -1;
         variable hbits   : std_logic_vector(HOST_MAX-1 downto 0);
         variable hrx     : std_logic_vector(HOST_MAX-1 downto 0);
         variable exp_rx  : word_t;
@@ -421,12 +425,14 @@ begin
         variable n_swp   : natural := 0;
         variable early   : boolean := false;
         variable held    : boolean := false;
+        variable tie     : boolean := false;
         variable hx      : std_logic;
         variable sw      : std_logic;
         variable sw_p    : std_logic := '0';  -- master of the last frame planned
-        variable nx_mtx  : word_t;
-        variable nx_len  : integer;
-        variable nx_sw   : std_logic;
+        variable a_ok    : boolean;
+        variable carry   : boolean := false;  -- the reply of this frame was taken during the last one
+        variable carry_r : word_t  := (others => '0');
+        variable b_ok    : boolean;
         variable last_a  : integer := -1;
         variable last_b  : integer := -1;
 
@@ -497,7 +503,7 @@ begin
                 sv := '0';
             elsif ph = 1 then
                 sv := '1';
-            elsif (g = EARLY_F + 1 or g = HOLD_F + 1) and g > 1 then
+            elsif (g = EARLY_F + 1 or g = HOLD_F + 1 or g = TIE_F or g = TIE_F + 1) and g > 1 then
                 sv := not sw_p;
             else
                 rnd(0, 1, x);
@@ -520,6 +526,12 @@ begin
                 last_b        := w;
             end if;
 
+            if ph = 2 and g = TIE_F then
+                -- the slave of this frame gets no reply, so its TX buffer
+                -- is empty when the next master word comes (see TIE_F)
+                rs           := (others => '0');
+                plan_nrep(w) <= '1';
+            end if;
             plan_wlast(w) <= '1';
             plan_mtx(w)   <= m;
             plan_sresp(w) <= rs;
@@ -550,7 +562,7 @@ begin
                 -- ready for either role
                 assert sclk_pad = 'L' and cs_n_pad = 'H' and mosi_pad = 'L' and miso_pad = 'L'
                     report "TB: pins still driven between frames" severity error;
-                assert a_m_tx_ready = '1' and b_m_tx_ready = '1' and a_s_tx_ready = '1' and b_s_tx_ready = '1'
+                assert (a_m_tx_ready = '1' or a_s_tx_ready = '1') and (b_m_tx_ready = '1' or b_s_tx_ready = '1')
                     report "TB: ports not ready with the bus idle" severity error;
                 if ph = 1 then
                     report "TB: roles swapped, A is slave and B is master" severity note;
@@ -559,21 +571,14 @@ begin
                 end if;
             end if;
 
-            -- frames are planned one ahead, so the reply of the next frame
-            -- can go in before this one starts and wait through it
+            -- frames are planned just in time: a reply pending in the TX
+            -- buffer blocks the port's master writes, so the reply of a
+            -- later frame must not go in before an own master frame
             b2b := false;
-            plan_frame(ph, 1, word, nx_mtx, nx_len, nx_sw);
             for f in 1 to NUM_FRAMES loop
-                mtx := nx_mtx;
-                len := nx_len;
-                sw  := nx_sw;
-                if f < NUM_FRAMES then
-                    plan_frame(ph, f + 1, word + 1, nx_mtx, nx_len, nx_sw);
-                    plan_wcnt <= word + 2;
-                else
-                    plan_wcnt <= word + 1;
-                end if;
-                if b2b or early then
+                plan_frame(ph, f, word, mtx, len, sw);
+                plan_wcnt <= word + 1;
+                if (b2b or early) and not tie then
                     plan_b2b(frame) <= '1';
                 end if;
 
@@ -592,8 +597,28 @@ begin
                 m_tx_valid <= '0';
                 frame := frame + 1;
                 word  := word + 1;
+                if tie then
+                    -- taken as this port first sees CS# low: the slave goes
+                    -- first and the word waits for the bus
+                    cycles(2);
+                    assert (sw = '0' and a_miso_oe = '1' and a_cs_n_oe = '0') or
+                           (sw = '1' and b_miso_oe = '1' and b_cs_n_oe = '0')
+                        report "TB: master word on the slave start edge not held behind the slave frame" severity error;
+                    tie := false;
+                end if;
 
-                if ph = 2 and f = EARLY_F and f < NUM_FRAMES then
+                if ph = 2 and f = TIE_F and f < NUM_FRAMES then
+                    -- offer the next frame on the other port (master of the
+                    -- last frame, so its TX grant is on the master channel,
+                    -- and with no reply written) so that it is taken on the
+                    -- edge that port's synchronised CS# goes low: this
+                    -- frame's CS# falls one edge after the write and gets
+                    -- through the synchroniser 2 edges later. The port then
+                    -- sits in IDLE_FREE with a master word and CS# low for a
+                    -- cycle, and must take the slave frame first
+                    tie := true;
+                    cycles(2);
+                elsif ph = 2 and f = EARLY_F and f < NUM_FRAMES then
                     -- offer the next frame on the other port in the middle
                     -- of this one: it must wait for the bus
                     early := true;
@@ -679,24 +704,55 @@ begin
                 rnd(1, HOST_MAX, n);
             end if;
             rnd_bits(hbits);
-            assert a_s_tx_ready = '1' and b_s_tx_ready = '1' and a_m_tx_ready = '1' and b_m_tx_ready = '1'
-                report "host: frame " & integer'image(f) & " ports not ready between frames" severity error;
-            if f = HOST_URUN then
-                resp := (others => '0');
-            elsif f = HOST_TIE then
-                rnd_bits(resp);  -- written below, as the frame starts
-            elsif prev_n = 0 then
-                resp := prev;
+            if carry then
+                -- the reply taken during the last frame waits in the buffer
+                assert a_s_tx_ready = '0' and b_s_tx_ready = '0' and a_m_tx_ready = '0' and b_m_tx_ready = '0'
+                    report "host: frame " & integer'image(f) & " ready with a reply pending" severity error;
+            else
+                assert (a_s_tx_ready = '1' or a_m_tx_ready = '1') and (b_s_tx_ready = '1' or b_m_tx_ready = '1')
+                    report "host: frame " & integer'image(f) & " ports not ready between frames" severity error;
+            end if;
+            if carry then
+                resp  := carry_r;
+                carry := false;
+            elsif f = 2 or f = HOST_URUN or f = HOST_TIE then
+                -- no reply before the frame (frame 2 right after the empty
+                -- one, which used up its reply): it sends zeros, and the
+                -- reply written during it (on its start edge for HOST_TIE)
+                -- waits for the next frame
+                resp  := (others => '0');
+                rnd_bits(carry_r);
+                carry := true;
             else
                 rnd_bits(resp);
                 host_resp <= resp;
+                -- hold it until both ports take it (each has its own grant,
+                -- and takes it once: then its buffer is full)
                 host_wr   <= '1';
-                cycles(1);
+                a_ok      := false;
+                b_ok      := false;
+                loop
+                    wait until rising_edge(clk);
+                    a_ok := a_ok or a_s_tx_ready = '1';
+                    b_ok := b_ok or b_s_tx_ready = '1';
+                    exit when a_ok and b_ok;
+                end loop;
                 host_wr   <= '0';
                 cycles(1);
             end if;
-            prev   := resp;
-            prev_n := n;
+            if f = HOST_BLK then
+                -- the reply waits in the TX buffer: a master write to A
+                -- must not be taken while it does, with the bus free
+                host_mreq <= '1';
+                for i in 1 to 20 loop
+                    cycles(1);
+                    assert a_m_tx_ready = '0'
+                        report "host: frame " & integer'image(f) & " master write taken with a reply pending" severity error;
+                end loop;
+                -- the frame takes the reply out, and A would then take the
+                -- word and master a frame against the host
+                host_mreq <= '0';
+            end if;
             if f = HOST_HOLD then
                 host_rd <= '0';
             end if;
@@ -707,10 +763,11 @@ begin
             if f = HOST_TIE then
                 -- write the reply on the edge that starts the frame: high
                 -- s_tx_ready on that edge, low on the next one (the ports
-                -- see CS# low 3 edges after host_cs_n falls); it must go out
-                -- in this frame
+                -- see CS# low 3 edges after host_cs_n falls); it is not in
+                -- the buffer yet when the frame takes its reply, so it must
+                -- go out in the next frame
                 cycles(2);
-                host_resp <= resp;
+                host_resp <= carry_r;
                 host_wr   <= '1';
                 cycles(1);
                 assert a_s_tx_ready = '1' and b_s_tx_ready = '1'
@@ -732,20 +789,29 @@ begin
                         report "host: frame " & integer'image(f) & " MISO driven during reset" severity error;
                     cycles(1);
                     rst       <= '0';
-                    host_mreq <= '1';  -- A must not start while CS# is low
                 end if;
                 host_mosi <= hbits(HOST_MAX-1-i);
-                if f = 2 and i = 1 then
-                    host_resp <= not resp;
+                if (f = 2 or f = HOST_URUN) and i = 1 then
+                    -- the frame took its reply out (none), so the buffer is
+                    -- free: this one is taken now, for the next frame
+                    host_resp <= carry_r;
                     host_wr   <= '1';
+                elsif f = 2 and i = 3 then
+                    host_resp <= not carry_r;  -- the buffer is full: refused
                 end if;
                 cycles(SCK_DIV);
                 host_sclk <= '1';
                 hrx(HOST_MAX-1-i) := miso_in;
-                assert a_s_tx_ready = '0' and b_s_tx_ready = '0'
-                    report "host: frame " & integer'image(f) & " s_tx_ready high during the frame" severity error;
-                assert a_m_tx_ready = '0' and b_m_tx_ready = '0'
-                    report "host: frame " & integer'image(f) & " m_tx_ready high during the frame" severity error;
+                -- the frame took its reply out of the TX buffer as it
+                -- started, so the buffer is free, unless a reply went in
+                -- during the frame
+                if ((f = 2 or f = HOST_URUN) and i >= 1) or f = HOST_TIE then
+                    assert a_s_tx_ready = '0' and b_s_tx_ready = '0' and a_m_tx_ready = '0' and b_m_tx_ready = '0'
+                        report "host: frame " & integer'image(f) & " TX ready high with the buffer full" severity error;
+                else
+                    assert (a_s_tx_ready = '1' or a_m_tx_ready = '1') and (b_s_tx_ready = '1' or b_m_tx_ready = '1')
+                        report "host: frame " & integer'image(f) & " TX buffer not free during the frame" severity error;
+                end if;
                 assert (a_miso_oe = '0' and b_miso_oe = '0') or not (f = HOST_RST and i >= n / 2)
                     report "host: frame " & integer'image(f) & " MISO driven after a reset in the frame" severity error;
                 cycles(SCK_DIV);
@@ -833,14 +899,14 @@ begin
         end loop;
         host_en <= '0';
 
-        assert n_b2b > 0 and n_mshrt > 0 and n_mclip > 0 and n_swp > 0 and n_surv > 0 and n_wait > 0
-            report "TB: coverage hole (back-to-back, shorter, clipped, role change, reply through a master frame " &
+        assert n_b2b > 0 and n_mshrt > 0 and n_mclip > 0 and n_swp > 0 and n_gnt > 0 and n_wait > 0
+            report "TB: coverage hole (back-to-back, shorter, clipped, role change, write waiting for the TX grant " &
                    "or master waiting for the bus)" severity error;
         report "TB: PASS - " & integer'image(frame) & " master frames, " & integer'image(word) & " words of " &
                integer'image(WIDTH) & " bits (" & integer'image(n_b2b) & " back-to-back, " &
                integer'image(n_mshrt) & " shorter, " & integer'image(n_mclip) &
                " with tx_bits 0 or over WIDTH, " & integer'image(n_swp) & " role changes, " &
-               integer'image(n_surv) & " replies kept through an own master frame), " & integer'image(HOST_FRAMES) & " host frames (" &
+               integer'image(n_gnt) & " cycles a write waited for the TX grant), " & integer'image(HOST_FRAMES) & " host frames (" &
                integer'image(n_empty) & " empty, " & integer'image(n_short) & " shorter, " &
                integer'image(n_exact) & " exact, " & integer'image(n_long) & " longer)"
             severity note;
@@ -855,35 +921,17 @@ begin
     -- a reply may go in once its port's previous slave word is reported
     s_wdone    <= s_rx_wcnt + 1 when s_rx_valid = '1' else s_rx_wcnt;
     s_tx_data  <= plan_sresp(s_tx_cnt);
-    s_tx_valid <= '1' when host_en = '0' and s_tx_cnt < plan_wcnt and s_wdone > plan_sprev(s_tx_cnt) else '0';
+    s_tx_valid <= '1' when host_en = '0' and s_tx_cnt < plan_wcnt and s_wdone > plan_sprev(s_tx_cnt) and
+                           plan_nrep(s_tx_cnt) = '0' else '0';
 
     slave_tx_proc: process
-        variable a_pend : boolean := false;  -- a reply waits for the port's next slave frame
-        variable b_pend : boolean := false;
-        variable a_oe_p : std_logic := '0';
-        variable b_oe_p : std_logic := '0';
     begin
         wait until rising_edge(clk);
-        -- coverage: the port starts a master frame with a reply pending
-        if (a_pend and a_cs_n_oe = '1' and a_oe_p = '0') or (b_pend and b_cs_n_oe = '1' and b_oe_p = '0') then
-            n_surv <= n_surv + 1;
-        end if;
-        if a_miso_oe = '1' then
-            a_pend := false;
-        end if;
-        if b_miso_oe = '1' then
-            b_pend := false;
-        end if;
         if s_tx_valid = '1' and s_tx_ready = '1' then
             s_tx_cnt <= s_tx_cnt + 1;
-            if plan_swap(s_tx_cnt) = '1' then
-                a_pend := true;
-            else
-                b_pend := true;
-            end if;
+        elsif host_en = '0' and s_tx_cnt < plan_wcnt and plan_nrep(s_tx_cnt) = '1' then
+            s_tx_cnt <= s_tx_cnt + 1;  -- no reply for this word
         end if;
-        a_oe_p := a_cs_n_oe;
-        b_oe_p := b_cs_n_oe;
     end process slave_tx_proc;
 
     slave_rx_proc: process
@@ -977,23 +1025,29 @@ begin
     ------------------------------------------------------------------
 
     bus_mon_proc: process
-        variable sclk_p : std_logic;
-        variable cs_p   : std_logic;
-        variable mosi_p : std_logic;
-        variable miso_p : std_logic;
-        variable phase  : natural := 0;
-        variable lo_cnt : natural := 0;
-        variable hi_cnt : natural := CS_MIN;
-        variable frame  : natural := 0;
-        variable cs_run : natural := 0;
-        variable a_mr_p : std_logic := '0';
-        variable b_mr_p : std_logic := '0';
-        variable a_sr_p : std_logic := '0';
-        variable b_sr_p : std_logic := '0';
-        variable a_mt_p : boolean   := false;
-        variable b_mt_p : boolean   := false;
-        variable a_st_p : boolean   := false;
-        variable b_st_p : boolean   := false;
+        variable sclk_p  : std_logic;
+        variable cs_p    : std_logic;
+        variable mosi_p  : std_logic;
+        variable miso_p  : std_logic;
+        variable phase   : natural := 0;
+        variable lo_cnt  : natural := 0;
+        variable hi_cnt  : natural := CS_MIN;
+        variable frame   : natural := 0;
+        variable cs_run  : natural := 0;
+        variable a_oe_p  : std_logic := '0';
+        variable b_oe_p  : std_logic := '0';
+        variable a_mr_p  : std_logic := '0';
+        variable b_mr_p  : std_logic := '0';
+        variable a_sr_p  : std_logic := '0';
+        variable b_sr_p  : std_logic := '0';
+        variable a_mt_p  : boolean   := false;
+        variable b_mt_p  : boolean   := false;
+        variable a_st_p  : boolean   := false;
+        variable b_st_p  : boolean   := false;
+        variable a_mv_p  : std_logic := '0';
+        variable b_mv_p  : std_logic := '0';
+        variable a_sv_p  : std_logic := '0';
+        variable b_sv_p  : std_logic := '0';
     begin
         wait until rising_edge(clk) and chk_on = '1';
         sclk_p := sclk_in;
@@ -1032,9 +1086,12 @@ begin
                         report "bus: CS# high for " & integer'image(hi_cnt) & " cycles before frame " &
                                integer'image(frame) severity error;
                     if plan_b2b(frame) = '1' then
-                        -- the same for either master: both reach IDLE_FREE
-                        -- in the cycle their synchronised CS# is back high
-                        assert hi_cnt = B2B_HI
+                        -- the next word is already in the TX buffer (each
+                        -- frame frees it as it starts), and the frame starts
+                        -- as the port's synchronised CS# is back high: the
+                        -- same for either master; one more if the port's TX
+                        -- grant was on the slave channel (round robin)
+                        assert hi_cnt = B2B_HI or hi_cnt = B2B_HI + 1
                             report "bus: back-to-back frame " & integer'image(frame) & " waited " &
                                    integer'image(hi_cnt) & " cycles with CS# high" severity error;
                     end if;
@@ -1107,20 +1164,30 @@ begin
                     report "bus: master pins not released between frames" severity error;
             end if;
 
-            -- look before driving: no master write is taken while CS# is
-            -- low, up to the synchroniser latency
-            assert (a_m_tx_ready = '0' and b_m_tx_ready = '0') or cs_n_in = '1' or cs_run < MISO_LAT
-                report "bus: m_tx_ready high while CS# is low" severity error;
-            -- no reply is taken while a frame runs, master or slave
-            assert (a_s_tx_ready = '0' and b_s_tx_ready = '0') or cs_n_in = '1' or cs_run < MISO_LAT
-                report "bus: s_tx_ready high while CS# is low" severity error;
-            -- a ready only drops when a write is taken or the bus gets busy
-            if rst = '0' and cs_n_in = '1' then
-                assert (a_mr_p = '0' or a_m_tx_ready = '1' or a_mt_p) and (b_mr_p = '0' or b_m_tx_ready = '1' or b_mt_p)
-                    report "bus: m_tx_ready dropped with no write and the bus idle" severity error;
-                assert (a_sr_p = '0' or a_s_tx_ready = '1' or a_st_p or a_mt_p) and (b_sr_p = '0' or b_s_tx_ready = '1' or b_st_p or b_mt_p)
-                    report "bus: s_tx_ready dropped with the bus idle" severity error;
+            -- one TX buffer per port: never both readies at once
+            assert (a_m_tx_ready and a_s_tx_ready) = '0' and (b_m_tx_ready and b_s_tx_ready) = '0'
+                report "bus: m_tx_ready and s_tx_ready high together" severity error;
+            -- a master frame takes the word out of the TX buffer on the
+            -- edge the port starts driving CS#: free again at once
+            assert (a_cs_n_oe = '0' or a_oe_p = '1' or a_m_tx_ready = '1' or a_s_tx_ready = '1') and
+                   (b_cs_n_oe = '0' or b_oe_p = '1' or b_m_tx_ready = '1' or b_s_tx_ready = '1')
+                report "bus: TX buffer not free as the master frame starts" severity error;
+            a_oe_p := a_cs_n_oe;
+            b_oe_p := b_cs_n_oe;
+            -- a ready only drops when a write is taken or the other channel
+            -- of the port has a write waiting, frame or not
+            if rst = '0' then
+                assert (a_mr_p = '0' or a_m_tx_ready = '1' or a_mt_p or a_sv_p = '1') and
+                       (b_mr_p = '0' or b_m_tx_ready = '1' or b_mt_p or b_sv_p = '1')
+                    report "bus: m_tx_ready dropped with no write" severity error;
+                assert (a_sr_p = '0' or a_s_tx_ready = '1' or a_st_p or a_mv_p = '1') and
+                       (b_sr_p = '0' or b_s_tx_ready = '1' or b_st_p or b_mv_p = '1')
+                    report "bus: s_tx_ready dropped with no write" severity error;
             end if;
+            a_mv_p := a_m_tx_valid;
+            b_mv_p := b_m_tx_valid;
+            a_sv_p := a_s_tx_valid;
+            b_sv_p := b_s_tx_valid;
             a_mr_p := a_m_tx_ready;
             b_mr_p := b_m_tx_ready;
             a_sr_p := a_s_tx_ready;
@@ -1130,8 +1197,16 @@ begin
             a_st_p := a_s_tx_valid = '1' and a_s_tx_ready = '1';
             b_st_p := b_s_tx_valid = '1' and b_s_tx_ready = '1';
 
-            if ((a_m_tx_valid = '1' and a_m_tx_ready = '0' and a_cs_n_oe = '0') or
-                (b_m_tx_valid = '1' and b_m_tx_ready = '0' and b_cs_n_oe = '0')) and cs_n_in = '0' then
+            -- coverage: a write waits while the port's other channel holds
+            -- the TX grant
+            if (a_m_tx_valid = '1' and a_s_tx_ready = '1') or (a_s_tx_valid = '1' and a_m_tx_ready = '1') or
+               (b_m_tx_valid = '1' and b_s_tx_ready = '1') or (b_s_tx_valid = '1' and b_m_tx_ready = '1') then
+                n_gnt <= n_gnt + 1;
+            end if;
+            -- coverage: a master word goes into the TX buffer while another
+            -- master holds the bus, and must wait for it
+            if ((a_m_tx_valid = '1' and a_m_tx_ready = '1' and a_cs_n_oe = '0') or
+                (b_m_tx_valid = '1' and b_m_tx_ready = '1' and b_cs_n_oe = '0')) and cs_n_in = '0' then
                 n_wait <= n_wait + 1;
             end if;
 

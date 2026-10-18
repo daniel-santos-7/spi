@@ -18,8 +18,8 @@ entity spi_ctrl is
         rst_i        : in  std_logic;
         cs_n_i       : in  std_logic;  -- synchronised CS# (spi_sync): bus busy while low
         sclk_i       : in  std_logic;  -- synchronised SCK (spi_sync), followed by the slave
-        m_tx_valid_i : in  std_logic;  -- master word: starts a frame
-        s_tx_valid_i : in  std_logic;  -- slave reply for the next frame
+        tx_valid_i   : in  std_logic;  -- the TX buffer holds a word
+        tx_role_i    : in  std_logic;  -- of the master (start a frame) or a slave reply
         done_i       : in  std_logic;
         role_o       : out std_logic;  -- 1 during an own master frame, to spi_trx
         sclk_o       : out std_logic;
@@ -28,16 +28,14 @@ entity spi_ctrl is
         cs_n_oe      : out std_logic;
         mosi_oe      : out std_logic;
         miso_oe      : out std_logic;
-        m_tx_ready_o : out std_logic;
-        s_tx_ready_o : out std_logic;
         start_o      : out std_logic;
         m_stop_o     : out std_logic;  -- master frame ends (last SCK fall)
         s_stop_o     : out std_logic;  -- slave frame ends (CS# back high)
         sample_o     : out std_logic;
         shift_o      : out std_logic;
-        load_o       : out std_logic;  -- master word into the shift register
-        put_o        : out std_logic;  -- slave reply into the reply register
-        arm_o        : out std_logic   -- reply register into the shift register
+        load_o       : out std_logic;  -- master word from the TX buffer into the shift register
+        arm_o        : out std_logic;  -- slave reply from the TX buffer into the shift register
+        tx_ready_o   : out std_logic   -- the TX buffer word is used (load or arm)
     );
 end entity spi_ctrl;
 
@@ -62,7 +60,6 @@ architecture rtl of spi_ctrl is
     signal cnt_reg      : unsigned(CNT_W-1 downto 0);
     signal sclk_reg     : std_logic;
     signal cs_n_reg     : std_logic;
-    signal ready_reg    : std_logic;
     signal m_drv_en_reg : std_logic;
     signal s_drv_en_reg : std_logic;
     signal cnt_en_reg   : std_logic;
@@ -76,6 +73,7 @@ architecture rtl of spi_ctrl is
     signal s_stop       : std_logic;
     signal s_rise       : std_logic;
     signal s_fall       : std_logic;
+    signal s_arm        : std_logic;
 
 begin
 
@@ -89,7 +87,6 @@ begin
                 sclk_reg     <= '0';
                 cs_n_reg     <= '1';
                 cnt_en_reg   <= '0';
-                ready_reg    <= '0';
                 m_drv_en_reg <= '0';
                 s_drv_en_reg <= '0';
             else
@@ -97,18 +94,11 @@ begin
                     when IDLE_BUSY =>
                         if cs_n_i = '1' then
                             state_reg <= IDLE_FREE;
-                            ready_reg <= '1';
                         end if;
                     when IDLE_FREE =>
-                        -- a write taken in the cycle CS# is seen low wins: that
-                        -- tie is inside the collision window anyway
-                        if m_tx_valid_i = '1' then
-                            state_reg    <= M_SCK_LO;
-                            cs_n_reg     <= '0';
-                            cnt_en_reg   <= '1';
-                            ready_reg    <= '0';
-                            m_drv_en_reg <= '1';
-                        elsif cs_n_i = '0' then
+                        -- the slave goes first: a master word waits in the
+                        -- TX buffer until the bus is free again
+                        if cs_n_i = '0' then
                             -- start from the SCK level seen now, so an SCK
                             -- already high gives no rise
                             if sclk_i = '1' then
@@ -116,15 +106,18 @@ begin
                             else
                                 state_reg <= S_SCK_LO;
                             end if;
-                            ready_reg    <= '0';
                             s_drv_en_reg <= '1';
+                        elsif tx_valid_i = '1' and tx_role_i = '1' then
+                            state_reg    <= M_SCK_LO;
+                            cs_n_reg     <= '0';
+                            cnt_en_reg   <= '1';
+                            m_drv_en_reg <= '1';
                         end if;
                     -- the slave follows the synchronised SCK level; CS# high
                     -- ends the frame first, so SCK edges with CS# high are ignored
                     when S_SCK_LO =>
                         if cs_n_i = '1' then
                             state_reg    <= IDLE_FREE;
-                            ready_reg    <= '1';
                             s_drv_en_reg <= '0';
                         elsif sclk_i = '1' then
                             state_reg <= S_SCK_HI;
@@ -132,7 +125,6 @@ begin
                     when S_SCK_HI =>
                         if cs_n_i = '1' then
                             state_reg    <= IDLE_FREE;
-                            ready_reg    <= '1';
                             s_drv_en_reg <= '0';
                         elsif sclk_i = '0' then
                             state_reg <= S_SCK_LO;
@@ -180,16 +172,20 @@ begin
     end process cnt_proc;
 
     -- master strobes, qualified by state
-    m_start <= '1' when state_reg = IDLE_FREE and m_tx_valid_i = '1' else '0';
-    m_stop  <= '1' when state_reg = M_SCK_HI  and cnt_end      = '1' and done_i = '1' else '0';
-    m_rise  <= '1' when state_reg = M_SCK_LO  and cnt_end      = '1' else '0';
-    m_fall  <= '1' when state_reg = M_SCK_HI  and cnt_end      = '1' else '0';
+    m_start <= '1' when state_reg = IDLE_FREE and cs_n_i  = '1' and tx_valid_i = '1' and tx_role_i = '1' else '0';
+    m_stop  <= '1' when state_reg = M_SCK_HI  and cnt_end = '1' and done_i     = '1' else '0';
+    m_rise  <= '1' when state_reg = M_SCK_LO  and cnt_end = '1' else '0';
+    m_fall  <= '1' when state_reg = M_SCK_HI  and cnt_end = '1' else '0';
 
     -- slave strobes, qualified by state the same way
-    s_start <= '1' when state_reg = IDLE_FREE and cs_n_i      = '0' and m_tx_valid_i = '0' else '0';
+    s_start <= '1' when state_reg = IDLE_FREE and cs_n_i = '0' else '0';
     s_stop  <= '1' when (state_reg = S_SCK_LO or state_reg = S_SCK_HI) and cs_n_i = '1' else '0';
-    s_rise  <= '1' when state_reg = S_SCK_LO  and cs_n_i      = '0' and sclk_i       = '1' else '0';
-    s_fall  <= '1' when state_reg = S_SCK_HI  and cs_n_i      = '0' and sclk_i       = '0' else '0';
+    s_rise  <= '1' when state_reg = S_SCK_LO  and cs_n_i = '0' and sclk_i = '1' else '0';
+    s_fall  <= '1' when state_reg = S_SCK_HI  and cs_n_i = '0' and sclk_i = '0' else '0';
+    -- a slave frame takes the reply, if the TX buffer holds one (a master
+    -- word stays there); with none the shift register sends the zeros the
+    -- last stop left
+    s_arm   <= s_start and tx_valid_i and not tx_role_i;
 
     role_o       <= m_drv_en_reg;
     sclk_o       <= sclk_reg;
@@ -198,15 +194,13 @@ begin
     cs_n_oe      <= m_drv_en_reg;
     mosi_oe      <= m_drv_en_reg;
     miso_oe      <= s_drv_en_reg;  -- exactly in S_SCK_LO and S_SCK_HI
-    m_tx_ready_o <= ready_reg;     -- both only with no frame running
-    s_tx_ready_o <= ready_reg;
     start_o      <= m_start or s_start;
     m_stop_o     <= m_stop;
     s_stop_o     <= s_stop;
     sample_o     <= m_rise or s_rise;  -- mode 0: sample on SCK rise
     shift_o      <= m_fall or s_fall;  -- and shift on SCK fall
     load_o       <= m_start;
-    put_o        <= s_tx_valid_i and ready_reg;
-    arm_o        <= s_start;
+    arm_o        <= s_arm;
+    tx_ready_o   <= m_start or s_arm;
 
 end architecture rtl;
