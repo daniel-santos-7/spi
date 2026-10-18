@@ -43,7 +43,7 @@ architecture rtl of spi_trx is
     signal tx_bits_reg : std_logic_vector(CNT_BITS-1 downto 0);
     signal din         : std_logic;
     signal cnt_full    : std_logic;
-    signal done        : std_logic;
+    signal cnt_len     : std_logic;
 
 begin
 
@@ -52,7 +52,7 @@ begin
 
     din      <= miso_i when role_i = '1' else mosi_i;
     cnt_full <= '1' when bit_cnt_reg = WIDTH else '0';
-    done     <= '1' when bit_cnt_reg = unsigned(tx_bits_reg) or cnt_full = '1' else '0';
+    cnt_len  <= '1' when bit_cnt_reg = unsigned(tx_bits_reg) else '0';
 
     tx_proc: process(clk_i)
     begin
@@ -87,7 +87,7 @@ begin
 
     mosi_o    <= tx_sh_reg(WIDTH-1);
     miso_o    <= tx_sh_reg(WIDTH-1);
-    done_o    <= done;
+    done_o    <= cnt_len or cnt_full;
     rx_data_o <= rx_sh_reg;
     rx_bits_o <= std_logic_vector(bit_cnt_reg);
 
