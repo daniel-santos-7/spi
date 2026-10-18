@@ -83,7 +83,10 @@ begin
     rx_proc: process(clk_i)
     begin
         if rising_edge(clk_i) then
-            if rst_i = '1' or start_i = '1' then
+            if rst_i = '1' then
+                bit_cnt_reg <= (others => '0');
+                rx_sh_reg   <= (others => '0');
+            elsif start_i = '1' then
                 bit_cnt_reg <= (others => '0');
                 rx_sh_reg   <= (others => '0');
             elsif sample_i = '1' and bit_cnt_reg /= WIDTH then
