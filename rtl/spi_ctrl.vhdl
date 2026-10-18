@@ -33,9 +33,8 @@ entity spi_ctrl is
         s_stop_o     : out std_logic;  -- slave frame ends (CS# back high)
         sample_o     : out std_logic;
         shift_o      : out std_logic;
-        load_o       : out std_logic;  -- master word from the TX buffer into the shift register
-        arm_o        : out std_logic;  -- slave reply from the TX buffer into the shift register
-        tx_ready_o   : out std_logic   -- the TX buffer word is used (load or arm)
+        load_o       : out std_logic;  -- master frame start: send the TX buffer word
+        arm_o        : out std_logic   -- slave frame start with a reply in the TX buffer: send it
     );
 end entity spi_ctrl;
 
@@ -182,9 +181,8 @@ begin
     s_stop  <= '1' when (state_reg = S_SCK_LO or state_reg = S_SCK_HI) and cs_n_i = '1' else '0';
     s_rise  <= '1' when state_reg = S_SCK_LO  and cs_n_i = '0' and sclk_i = '1' else '0';
     s_fall  <= '1' when state_reg = S_SCK_HI  and cs_n_i = '0' and sclk_i = '0' else '0';
-    -- a slave frame takes the reply, if the TX buffer holds one (a master
-    -- word stays there); with none the shift register sends the zeros the
-    -- last stop left
+    -- a slave frame sends the reply, if the TX buffer holds one (a master
+    -- word stays there for its own frame); with none it sends zeros
     s_arm   <= s_start and tx_valid_i and not tx_role_i;
 
     role_o       <= m_drv_en_reg;
@@ -201,6 +199,5 @@ begin
     shift_o      <= m_fall or s_fall;  -- and shift on SCK fall
     load_o       <= m_start;
     arm_o        <= s_arm;
-    tx_ready_o   <= m_start or s_arm;
 
 end architecture rtl;

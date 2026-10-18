@@ -17,8 +17,7 @@
 -- random frame by frame. In one phase 2 frame the next frame is offered
 -- on the other port while the current one is still running: that port
 -- is the slave of the current frame, takes the word into its TX buffer
--- (the frame took its reply out as it started) and must wait for the
--- bus to start its own. In another, the master client
+-- once its reply is sent and must wait for the bus to start its own. In another, the master client
 -- leaves its word unread (m_rx_valid high) while the same port is the slave of
 -- the next frame: both roles share one receive buffer, so the held word
 -- must stay and the slave word must be dropped.
@@ -39,11 +38,12 @@
 -- longer than WIDTH). Each frame must be reported as one word: the
 -- first WIDTH bits, with a count of WIDTH for a longer frame. The host
 -- writes one reply word per frame, so any bit after the WIDTH-th must
--- be 0. A frame takes its reply out of the TX buffer as it starts, so
--- the empty frame uses its reply up: the next frame, and one more later,
--- get none (underrun) and must send zeros; a reply written during such a
--- frame, or on the edge a frame starts, must wait and go out in the next
--- frame, and a second one offered meanwhile must not be taken.
+-- be 0. A reply stays in the TX buffer until a frame has sent it, so the
+-- empty frame leaves its reply for the next one, and a write during that
+-- one is refused; one later frame gets no reply (underrun) and must send
+-- zeros, and a reply written during it, or on the edge a frame starts,
+-- must wait and go out in the next frame, and a second one offered
+-- meanwhile must not be taken.
 -- Both slaves get the same reply, so MISO
 -- contention is not checked in this phase (every reply bit the host
 -- samples is). The host reads every word as it is reported, except
@@ -704,8 +704,9 @@ begin
                 rnd(1, HOST_MAX, n);
             end if;
             rnd_bits(hbits);
-            if carry then
-                -- the reply taken during the last frame waits in the buffer
+            if carry or f = 2 then
+                -- the reply taken during the last frame, or the one the
+                -- empty frame did not send, waits in the buffer
                 assert a_s_tx_ready = '0' and b_s_tx_ready = '0' and a_m_tx_ready = '0' and b_m_tx_ready = '0'
                     report "host: frame " & integer'image(f) & " ready with a reply pending" severity error;
             else
@@ -715,16 +716,18 @@ begin
             if carry then
                 resp  := carry_r;
                 carry := false;
-            elsif f = 2 or f = HOST_URUN or f = HOST_TIE then
-                -- no reply before the frame (frame 2 right after the empty
-                -- one, which used up its reply): it sends zeros, and the
-                -- reply written during it (on its start edge for HOST_TIE)
-                -- waits for the next frame
+            elsif f = 2 then
+                resp := carry_r;  -- the empty frame sent nothing: its reply stays
+            elsif f = HOST_URUN or f = HOST_TIE then
+                -- no reply before the frame: it sends zeros, and the reply
+                -- written during it (on its start edge for HOST_TIE) waits
+                -- for the next frame
                 resp  := (others => '0');
                 rnd_bits(carry_r);
                 carry := true;
             else
                 rnd_bits(resp);
+                carry_r   := resp;
                 host_resp <= resp;
                 -- hold it until both ports take it (each has its own grant,
                 -- and takes it once: then its buffer is full)
@@ -791,27 +794,26 @@ begin
                     rst       <= '0';
                 end if;
                 host_mosi <= hbits(HOST_MAX-1-i);
-                if (f = 2 or f = HOST_URUN) and i = 1 then
-                    -- the frame took its reply out (none), so the buffer is
-                    -- free: this one is taken now, for the next frame
+                if f = 2 and i = 1 then
+                    -- the buffer holds the reply being sent: refused
+                    host_resp <= not resp;
+                    host_wr   <= '1';
+                elsif f = HOST_URUN and i = 1 then
+                    -- the frame sends no reply, so the buffer is free: this
+                    -- one is taken now and must wait for the next frame
                     host_resp <= carry_r;
                     host_wr   <= '1';
-                elsif f = 2 and i = 3 then
+                elsif f = HOST_URUN and i = 3 then
                     host_resp <= not carry_r;  -- the buffer is full: refused
                 end if;
                 cycles(SCK_DIV);
                 host_sclk <= '1';
                 hrx(HOST_MAX-1-i) := miso_in;
-                -- the frame took its reply out of the TX buffer as it
-                -- started, so the buffer is free, unless a reply went in
-                -- during the frame
-                if ((f = 2 or f = HOST_URUN) and i >= 1) or f = HOST_TIE then
-                    assert a_s_tx_ready = '0' and b_s_tx_ready = '0' and a_m_tx_ready = '0' and b_m_tx_ready = '0'
-                        report "host: frame " & integer'image(f) & " TX ready high with the buffer full" severity error;
-                else
-                    assert (a_s_tx_ready = '1' or a_m_tx_ready = '1') and (b_s_tx_ready = '1' or b_m_tx_ready = '1')
-                        report "host: frame " & integer'image(f) & " TX buffer not free during the frame" severity error;
-                end if;
+                -- the TX buffer holds the reply being sent, or one taken during
+                -- the underrun frame (empty before it, and after the reset)
+                assert (a_s_tx_ready = '0' and b_s_tx_ready = '0' and a_m_tx_ready = '0' and b_m_tx_ready = '0') or
+                       (f = HOST_URUN and i = 0) or (f = HOST_RST and i >= n / 2)
+                    report "host: frame " & integer'image(f) & " TX ready high with the buffer full" severity error;
                 assert (a_miso_oe = '0' and b_miso_oe = '0') or not (f = HOST_RST and i >= n / 2)
                     report "host: frame " & integer'image(f) & " MISO driven after a reset in the frame" severity error;
                 cycles(SCK_DIV);
@@ -1034,8 +1036,6 @@ begin
         variable hi_cnt  : natural := CS_MIN;
         variable frame   : natural := 0;
         variable cs_run  : natural := 0;
-        variable a_oe_p  : std_logic := '0';
-        variable b_oe_p  : std_logic := '0';
         variable a_mr_p  : std_logic := '0';
         variable b_mr_p  : std_logic := '0';
         variable a_sr_p  : std_logic := '0';
@@ -1167,13 +1167,13 @@ begin
             -- one TX buffer per port: never both readies at once
             assert (a_m_tx_ready and a_s_tx_ready) = '0' and (b_m_tx_ready and b_s_tx_ready) = '0'
                 report "bus: m_tx_ready and s_tx_ready high together" severity error;
-            -- a master frame takes the word out of the TX buffer on the
-            -- edge the port starts driving CS#: free again at once
-            assert (a_cs_n_oe = '0' or a_oe_p = '1' or a_m_tx_ready = '1' or a_s_tx_ready = '1') and
-                   (b_cs_n_oe = '0' or b_oe_p = '1' or b_m_tx_ready = '1' or b_s_tx_ready = '1')
-                report "bus: TX buffer not free as the master frame starts" severity error;
-            a_oe_p := a_cs_n_oe;
-            b_oe_p := b_cs_n_oe;
+            -- the TX buffer word is used once its master frame has sent
+            -- it: free again on the edge the master's CS# goes back high
+            if cs_p = '0' and cs_n_in = '1' then
+                assert (a_cs_n_oe = '0' or a_m_tx_ready = '1' or a_s_tx_ready = '1') and
+                       (b_cs_n_oe = '0' or b_m_tx_ready = '1' or b_s_tx_ready = '1')
+                    report "bus: TX buffer not free as the master frame ends" severity error;
+            end if;
             -- a ready only drops when a write is taken or the other channel
             -- of the port has a write waiting, frame or not
             if rst = '0' then
