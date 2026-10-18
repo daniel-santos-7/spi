@@ -83,17 +83,21 @@ begin
     -- zeros. A word taken in a flush state belongs to the new role and
     -- stays. The clear comes first, so it maps onto the flip-flops'
     -- synchronous reset.
-    tx_proc: process(clk_i)
+    -- 1 during a frame: no TX word is taken then
+    busy_proc: process(clk_i)
     begin
         if rising_edge(clk_i) then
-            if rst_i = '1' then
+            if rst_i = '1' or stop_i = '1' then
                 busy_reg <= '0';
             elsif start_i = '1' then
                 busy_reg <= '1';
-            elsif stop_i = '1' then
-                busy_reg <= '0';
             end if;
+        end if;
+    end process busy_proc;
 
+    tx_proc: process(clk_i)
+    begin
+        if rising_edge(clk_i) then
             if rst_i = '1' or tx_clr = '1' then
                 tx_valid_reg <= '0';
                 tx_sh_reg    <= (others => '0');
