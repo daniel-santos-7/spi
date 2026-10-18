@@ -77,7 +77,7 @@ architecture rtl of spi_port is
     signal spi_port_trx_miso       : std_logic;
     signal spi_port_trx_done       : std_logic;
     signal spi_port_trx_ready      : std_logic;
-    signal spi_port_trx_load       : std_logic;
+    signal spi_port_trx_valid      : std_logic;
     signal spi_port_trx_data       : std_logic_vector(WIDTH-1 downto 0);
     signal spi_port_trx_bits       : std_logic_vector(CNT_BITS-1 downto 0);
 
@@ -174,7 +174,7 @@ begin
         miso_o   => spi_port_trx_miso,
         done_o   => spi_port_trx_done,
         ready_o  => spi_port_trx_ready,
-        load_o   => spi_port_trx_load,
+        valid_o  => spi_port_trx_valid,
         data_o   => spi_port_trx_data,
         bits_o   => spi_port_trx_bits
     );
@@ -186,7 +186,7 @@ begin
         clk_i   => clk_i,
         rst_i   => rst_i,
         flush_i => spi_port_ctrl_flush,
-        valid_i => spi_port_trx_load,
+        valid_i => spi_port_trx_valid,
         data_i  => spi_port_trx_data,
         bits_i  => spi_port_trx_bits,
         ready_i => rx_ready_i,

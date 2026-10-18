@@ -35,7 +35,7 @@ entity spi_trx is
         miso_o   : out std_logic;
         done_o   : out std_logic;
         ready_o  : out std_logic;  -- the frame that sent the TX buffer word ends, to the TX buffer
-        load_o   : out std_logic;  -- word received (stop_i), to the receive buffer
+        valid_o  : out std_logic;  -- word received (stop_i), to the receive buffer
         data_o   : out std_logic_vector(WIDTH-1 downto 0);
         bits_o   : out std_logic_vector(CNT_BITS-1 downto 0)
     );
@@ -102,7 +102,7 @@ begin
     -- the word is used once a frame has sent it (an empty slave frame
     -- sent nothing: the reply stays)
     ready_o <= '1' when stop_i = '1' and tx_en_reg = '1' and bit_cnt_reg /= 0 else '0';
-    load_o  <= stop_i;
+    valid_o <= stop_i;
     data_o  <= rx_sh_reg;
     bits_o  <= std_logic_vector(bit_cnt_reg);
 
