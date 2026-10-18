@@ -8,10 +8,11 @@
 library IEEE;
 use IEEE.std_logic_1164.all;
 use IEEE.numeric_std.all;
+use work.spi_pkg.all;
 
 entity spi_ctrl is
     generic (
-        SCK_DIV : positive := 1
+        SCK_DIV : positive := DEF_SCK_DIV
     );
     port (
         clk_i       : in  std_logic;
@@ -43,16 +44,6 @@ end entity spi_ctrl;
 architecture rtl of spi_ctrl is
 
     type state_t is (S_IDLE, S_FLUSH, S_FRAME, M_IDLE, M_FLUSH, M_SCK_LO, M_SCK_HI, M_END);
-
-    -- bits needed to hold n (at least 1)
-    function bits_for(n : natural) return positive is
-        variable r : positive := 1;
-    begin
-        while 2**r <= n loop
-            r := r + 1;
-        end loop;
-        return r;
-    end function bits_for;
 
     -- the SCK divider counts 0 to SCK_DIV-1
     constant CNT_W : positive := bits_for(SCK_DIV-1);

@@ -11,6 +11,7 @@ Dual-role SPI in VHDL-93: one set of pins and one shift core, used either as a m
 ## Structure
 
 ```
+rtl/spi_pkg.vhdl      package: bits_for and the generic defaults
 rtl/spi_sync.vhdl     two-flip-flop synchronisers for SCK, CS# and MOSI
 rtl/spi_edge.vhdl     slave edge detection on the synchronised CS# and SCK
 rtl/spi_ctrl.vhdl     control: role, FSM, master SCK/CS#, pin enables

@@ -7,12 +7,13 @@
 
 library IEEE;
 use IEEE.std_logic_1164.all;
+use work.spi_pkg.all;
 
 entity spi_port is
     generic (
-        SCK_DIV  : positive := 1;
-        WIDTH    : positive := 32;
-        CNT_BITS : positive := 6
+        SCK_DIV  : positive := DEF_SCK_DIV;
+        WIDTH    : positive := DEF_WIDTH;
+        CNT_BITS : positive := DEF_CNT_BITS
     );
     port (
         clk_i      : in  std_logic;

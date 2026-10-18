@@ -7,11 +7,12 @@
 
 library IEEE;
 use IEEE.std_logic_1164.all;
+use work.spi_pkg.all;
 
 entity spi_buf is
     generic (
-        WIDTH    : positive := 32;
-        CNT_BITS : positive := 6
+        WIDTH    : positive := DEF_WIDTH;
+        CNT_BITS : positive := DEF_CNT_BITS
     );
     port (
         clk_i   : in  std_logic;
