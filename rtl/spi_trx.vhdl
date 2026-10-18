@@ -69,10 +69,10 @@ begin
     done <= '1' when bit_cnt_reg = unsigned(tx_bits_reg) or bit_cnt_reg = WIDTH else '0';
 
     -- the TX word is used once a frame has sent it (an empty slave frame
-    -- sent nothing: the reply stays); a new word is taken between frames
-    -- or as the word held is used
+    -- sent nothing: the reply stays); a word is taken at any time between
+    -- frames, replacing the one held (the last write wins)
     tx_used  <= '1' when stop_i = '1' and tx_valid_reg = '1' and bit_cnt_reg /= 0 else '0';
-    tx_ready <= (not tx_valid_reg and not busy_reg) or tx_used;
+    tx_ready <= not busy_reg;
     tx_load  <= tx_ready and tx_valid_i;
     tx_clr   <= (tx_used or flush_i) and not tx_load;
 

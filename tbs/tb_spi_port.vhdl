@@ -27,12 +27,14 @@
 -- Every frame is one word of random data from the master, answered by
 -- a random reply word from the slave, with a random tx_bits: mostly 1
 -- to WIDTH bits, sometimes 0 or more than WIDTH, which must give WIDTH
--- bits. The master client sometimes offers the next word while the
--- frame runs (held: taken as the frame ends, CS# high for CS_MIN
+-- bits. A write between frames replaces the word held (the last write
+-- wins), so the clients offer a word only once the one before it is on
+-- its way: the master client sometimes offers the next word once the
+-- frame runs (held: taken right after it ends, CS# high for CS_MIN
 -- cycles), sometimes as soon as the last one is reported (back-to-back),
--- otherwise after a random gap. The slave client offers each reply as
--- soon as it is planned: the TX buffer takes it as the frame before it
--- ends.
+-- otherwise after a random gap; the slave client offers each reply once
+-- the frame before it has been reported. In phase 2 the host writes
+-- each reply twice, and only the second may go out.
 --
 -- Phase 2 straps both ports as slaves and drives the pins from a
 -- software host, with frames of any length (empty, shorter, equal and
@@ -93,7 +95,7 @@ end entity tb_spi_port;
 architecture sim of tb_spi_port is
 
     constant CLK_PERIOD : time    := 10 ns;
-    constant CS_MIN     : integer := 2;
+    constant CS_MIN     : integer := 3;
     constant MISO_LAT   : integer := 3;
     constant GLITCH_F   : integer := 3;
     constant B2B_HI     : integer := 5;
@@ -460,8 +462,6 @@ begin
                 cycles(1);
                 m_tx_valid <= '0';
                 cycles(1);
-                assert b_tx_ready = '0'
-                    report "TB: slave reply not taken by B" severity error;
                 strap_b <= '1';
                 cycles(10);
                 assert b_tx_ready = '1' and b_role_ack = '1' and cs_n_in = '1'
@@ -531,6 +531,11 @@ begin
                     -- the one after its strap rises: it must stay
                     strap_b <= '1';
                     cycles(1);
+                end if;
+                if held then
+                    -- the last write wins: offer the next word once the
+                    -- frame sending this one has started
+                    wait until rising_edge(clk) and cs_n_in = '0';
                 end if;
                 m_tx_valid <= '1';
                 loop
@@ -628,18 +633,20 @@ begin
                 rnd(1, HOST_MAX, n);
             end if;
             rnd_bits(hbits);
-            -- the TX buffer is free between frames unless it still holds
-            -- a reply (left by an empty frame or written during an underrun)
-            assert (a_tx_ready = '1' and b_tx_ready = '1') = not pend
+            -- the TX buffer takes a word at any time between frames
+            assert a_tx_ready = '1' and b_tx_ready = '1'
                 report "host: frame " & integer'image(f) & " wrong tx_ready between frames" severity error;
             if pend then
                 resp := pword;
             elsif f = HOST_URUN then
                 resp := (others => '0');
             else
+                -- two writes: the last one wins
                 rnd_bits(resp);
-                host_resp <= resp;
+                host_resp <= not resp;
                 host_wr   <= '1';
+                cycles(1);
+                host_resp <= resp;
                 cycles(1);
                 host_wr   <= '0';
                 cycles(1);
@@ -886,9 +893,9 @@ begin
     ------------------------------------------------------------------
 
     s_tx_data  <= plan_sresp(s_tx_cnt);
-    -- the TX buffer keeps the order: each reply is offered once planned
-    -- and taken as the frame before it ends
-    s_tx_valid <= '1' when host_en = '0' and s_tx_cnt < plan_wcnt else '0';
+    -- the last write wins: each reply is offered once planned and once the
+    -- frame before it has been reported
+    s_tx_valid <= '1' when host_en = '0' and s_tx_cnt < plan_wcnt and s_tx_cnt = s_rx_wcnt else '0';
 
     slave_tx_proc: process
     begin
