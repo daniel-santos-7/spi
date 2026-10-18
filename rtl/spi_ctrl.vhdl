@@ -29,8 +29,7 @@ entity spi_ctrl is
         mosi_oe      : out std_logic;
         miso_oe      : out std_logic;
         start_o      : out std_logic;
-        m_stop_o     : out std_logic;  -- master frame ends (last SCK fall)
-        s_stop_o     : out std_logic;  -- slave frame ends (CS# back high)
+        stop_o       : out std_logic;  -- frame ends: last SCK fall (master), CS# back high (slave)
         sample_o     : out std_logic;
         shift_o      : out std_logic;
         send_o       : out std_logic   -- frame start that sends the TX buffer word
@@ -192,8 +191,7 @@ begin
     mosi_oe      <= m_drv_en_reg;
     miso_oe      <= s_drv_en_reg;  -- exactly in S_SCK_LO and S_SCK_HI
     start_o      <= m_start or s_start;
-    m_stop_o     <= m_stop;
-    s_stop_o     <= s_stop;
+    stop_o       <= m_stop or s_stop;
     sample_o     <= m_rise or s_rise;  -- mode 0: sample on SCK rise
     shift_o      <= m_fall or s_fall;  -- and shift on SCK fall
     send_o       <= m_start or s_send;  -- a master frame always sends its word

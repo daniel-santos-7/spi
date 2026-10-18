@@ -15,30 +15,29 @@ entity spi_trx is
         CNT_BITS : positive := 6
     );
     port (
-        clk_i      : in  std_logic;
-        rst_i      : in  std_logic;
+        clk_i    : in  std_logic;
+        rst_i    : in  std_logic;
 
-        start_i    : in  std_logic;
-        m_stop_i   : in  std_logic;  -- master frame ends
-        s_stop_i   : in  std_logic;  -- slave frame ends
-        sample_i   : in  std_logic;
-        shift_i    : in  std_logic;
-        send_i     : in  std_logic;  -- frame start that sends data_i (the TX buffer word)
+        start_i  : in  std_logic;
+        stop_i   : in  std_logic;  -- frame ends (master or slave)
+        sample_i : in  std_logic;
+        shift_i  : in  std_logic;
+        send_i   : in  std_logic;  -- frame start that sends data_i (the TX buffer word)
 
-        role_i     : in  std_logic;  -- 1 = master: sample miso_i
-        miso_i     : in  std_logic;  -- not synchronised: master only, timed by our own SCK
-        mosi_i     : in  std_logic;  -- synchronised to clk_i (spi_sync does it)
+        role_i   : in  std_logic;  -- 1 = master: sample miso_i
+        miso_i   : in  std_logic;  -- not synchronised: master only, timed by our own SCK
+        mosi_i   : in  std_logic;  -- synchronised to clk_i (spi_sync does it)
 
-        data_i     : in  std_logic_vector(WIDTH-1 downto 0);     -- TX buffer word, held while it is sent
-        bits_i     : in  std_logic_vector(CNT_BITS-1 downto 0);
+        data_i   : in  std_logic_vector(WIDTH-1 downto 0);     -- TX buffer word, held while it is sent
+        bits_i   : in  std_logic_vector(CNT_BITS-1 downto 0);
 
-        mosi_o     : out std_logic;
-        miso_o     : out std_logic;
-        done_o     : out std_logic;
-        tx_ready_o : out std_logic;  -- the frame that sent the TX buffer word ends, to the TX buffer
-        load_o     : out std_logic;  -- word received (either stop), to the receive buffer
-        data_o     : out std_logic_vector(WIDTH-1 downto 0);
-        bits_o     : out std_logic_vector(CNT_BITS-1 downto 0)
+        mosi_o   : out std_logic;
+        miso_o   : out std_logic;
+        done_o   : out std_logic;
+        ready_o  : out std_logic;  -- the frame that sent the TX buffer word ends, to the TX buffer
+        valid_o  : out std_logic;  -- word received (frame ends), to the receive buffer
+        data_o   : out std_logic_vector(WIDTH-1 downto 0);
+        bits_o   : out std_logic_vector(CNT_BITS-1 downto 0)
     );
 end entity spi_trx;
 
@@ -68,7 +67,7 @@ begin
     tx_proc: process(clk_i)
     begin
         if rising_edge(clk_i) then
-            if rst_i = '1' or m_stop_i = '1' or s_stop_i = '1' then
+            if rst_i = '1' or stop_i = '1' then
                 dout_reg  <= '0';
                 tx_en_reg <= '0';
             elsif send_i = '1' then
@@ -97,14 +96,14 @@ begin
         end if;
     end process rx_proc;
 
-    mosi_o     <= dout_reg;
-    miso_o     <= dout_reg;
-    done_o     <= done;
+    mosi_o   <= dout_reg;
+    miso_o   <= dout_reg;
+    done_o   <= done;
     -- the word is used once a frame has sent it (an empty slave frame
     -- sent nothing: the reply stays)
-    tx_ready_o <= '1' when (m_stop_i = '1' or s_stop_i = '1') and tx_en_reg = '1' and bit_cnt_reg /= 0 else '0';
-    load_o     <= m_stop_i or s_stop_i;
-    data_o     <= rx_sh_reg;
-    bits_o     <= std_logic_vector(bit_cnt_reg);
+    ready_o  <= '1' when stop_i = '1' and tx_en_reg = '1' and bit_cnt_reg /= 0 else '0';
+    valid_o  <= stop_i;
+    data_o   <= rx_sh_reg;
+    bits_o   <= std_logic_vector(bit_cnt_reg);
 
 end architecture rtl;
