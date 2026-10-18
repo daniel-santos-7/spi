@@ -48,13 +48,14 @@ begin
                 data_reg  <= (others => '0');
                 bits_reg  <= (others => '0');
             elsif valid_reg = '0' or ready_i = '1' then
-                valid_reg <= valid_i;
                 if valid_i = '1' then
-                    data_reg <= data_i;
-                    bits_reg <= bits_i;
+                    valid_reg <= '1';
+                    data_reg  <= data_i;
+                    bits_reg  <= bits_i;
                 else
-                    data_reg <= (others => '0');
-                    bits_reg <= (others => '0');
+                    valid_reg <= '0';
+                    data_reg  <= (others => '0');
+                    bits_reg  <= (others => '0');
                 end if;
             elsif flush_i = '1' then
                 valid_reg <= '0';
