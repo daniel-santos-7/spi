@@ -26,7 +26,6 @@ entity spi_port is
         tx_valid_i : in  std_logic;
         tx_data_i  : in  std_logic_vector(WIDTH-1 downto 0);
         tx_bits_i  : in  std_logic_vector(CNT_BITS-1 downto 0);
-        rx_ready_i : in  std_logic;
         role_ack_o : out std_logic;
         sclk_o     : out std_logic;
         sclk_oe    : out std_logic;

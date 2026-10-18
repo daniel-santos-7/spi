@@ -50,12 +50,11 @@ The testbench connects two ports to one modelled bus. It runs random master/slav
 | `role_ack_o` | out | role in effect |
 | `sclk_*`, `cs_n_*`, `mosi_*`, `miso_*` | | pins, each as `_i`, `_o`, `_oe` |
 | `tx_valid_i`, `tx_ready_o`, `tx_data_i`, `tx_bits_i` | | word to send; `tx_bits_i` is the master frame length |
-| `rx_valid_o`, `rx_data_o`, `rx_bits_o` | out | word received and its bit count, for one cycle |
-| `rx_ready_i` | in | not used |
+| `rx_valid_o`, `rx_data_o`, `rx_bits_o` | out | word received and its bit count, for one cycle (no `rx_ready`) |
 
 **Roles.** As master the port drives SCK, `CS#` and MOSI; as slave it drives MISO only while selected. A role change requested during a frame takes effect when the frame ends; `role_ack_o` = `role_req_i` means it has taken effect. In the master role a word offered wins over a switch back to slave, and a word still offered when the port becomes a master starts a frame: lower `tx_valid_i` before changing `role_req_i`. There is no arbitration between masters: raise `role_req_i` only when no other master on the bus can start a frame.
 
-**Handshakes.** There is no transmit buffer: the word on `tx_*` is taken straight into the shift register as a frame starts, and `tx_ready_o` is high for that one cycle only (it is the start strobe). Hold `tx_valid_i`, `tx_data_i` and `tx_bits_i` until `tx_ready_o`, as in AXI; a word offered during a frame waits for the next start. There is no receive buffer either: a received word is on `rx_data_o`/`rx_bits_o` only in the cycle `rx_valid_o` is high (it is the stop strobe), and the client must take it then; `rx_ready_i` is not used. Keep `tx_valid_i` low during reset, as in AXI.
+**Handshakes.** There is no transmit buffer: the word on `tx_*` is taken straight into the shift register as a frame starts, and `tx_ready_o` is high for that one cycle only (it is the start strobe). Hold `tx_valid_i`, `tx_data_i` and `tx_bits_i` until `tx_ready_o`, as in AXI; a word offered during a frame waits for the next start. There is no receive buffer either: a received word is on `rx_data_o`/`rx_bits_o` only in the cycle `rx_valid_o` is high (it is the stop strobe), and the client must take it then: there is no `rx_ready`, so the receive side cannot be held back. Keep `tx_valid_i` low during reset, as in AXI.
 
 **Role change and pending words.** No word is ever pending inside the port: the word to send is taken only at a start, so it is up to the client to withdraw it, and a received word is reported as its frame ends. The role changes in the cycle after `role_req_i` changes. A slave frame that starts in the first cycle as a slave (a `CS#` fall right after the switch, which only a colliding master can cause) is still taken, with the reply offered then.
 

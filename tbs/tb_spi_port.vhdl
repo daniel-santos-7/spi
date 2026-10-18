@@ -49,8 +49,7 @@
 -- Both slaves get the same reply, so MISO
 -- contention is not checked in this phase (every reply bit the host
 -- samples is). There is no receive buffer: every word is reported for
--- one cycle (rx_valid is the stop strobe) and rx_ready_i, held low, is
--- not used.
+-- one cycle (rx_valid is the stop strobe), with no rx_ready.
 -- In one host frame both ports are reset halfway through: with CS#
 -- still low after the reset they must stay out of that frame (no word
 -- reported, MISO not driven during the reset nor after it) and take the
@@ -188,7 +187,6 @@ architecture sim of tb_spi_port is
     signal a_tx_ready   : std_logic;
     signal a_tx_data    : word_t;
     signal a_tx_bits    : bits_t;
-    signal a_rx_ready   : std_logic;
     signal a_rx_data    : word_t;
     signal a_rx_bits    : std_logic_vector(CNT_BITS-1 downto 0);
     signal a_rx_valid   : std_logic;
@@ -207,7 +205,6 @@ architecture sim of tb_spi_port is
     signal b_tx_ready   : std_logic;
     signal b_tx_data    : word_t;
     signal b_tx_bits    : bits_t;
-    signal b_rx_ready   : std_logic;
     signal b_rx_data    : word_t;
     signal b_rx_bits    : std_logic_vector(CNT_BITS-1 downto 0);
     signal b_rx_valid   : std_logic;
@@ -267,7 +264,6 @@ begin
         tx_valid_i => a_tx_valid,
         tx_data_i  => a_tx_data,
         tx_bits_i  => a_tx_bits,
-        rx_ready_i => a_rx_ready,
         role_ack_o => a_role_ack,
         sclk_o     => a_sclk_o,
         sclk_oe    => a_sclk_oe,
@@ -298,7 +294,6 @@ begin
         tx_valid_i => b_tx_valid,
         tx_data_i  => b_tx_data,
         tx_bits_i  => b_tx_bits,
-        rx_ready_i => b_rx_ready,
         role_ack_o => b_role_ack,
         sclk_o     => b_sclk_o,
         sclk_oe    => b_sclk_oe,
@@ -349,9 +344,6 @@ begin
     m_rx_data    <= a_rx_data    when swap = '0' else b_rx_data;
     m_rx_valid   <= a_rx_valid   when swap = '0' else b_rx_valid;
 
-    -- rx_ready_i is not used: held low
-    a_rx_ready   <= '0';
-    b_rx_ready   <= '0';
     s_tx_ready   <= b_tx_ready   when swap = '0' else a_tx_ready;
     s_rx_data    <= b_rx_data    when swap = '0' else a_rx_data;
     s_rx_bits    <= b_rx_bits    when swap = '0' else a_rx_bits;
