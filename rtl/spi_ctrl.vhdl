@@ -22,7 +22,7 @@ entity spi_ctrl is
         cs_n_rise_i : in  std_logic;
         sclk_rise_i : in  std_logic;
         sclk_fall_i : in  std_logic;
-        tx_valid_i  : in  std_logic;  -- the TX buffer holds a word
+        tx_valid_i  : in  std_logic;  -- the client offers a word: the master starts a frame
         done_i      : in  std_logic;
         role_ack_o  : out std_logic;  -- role in effect (1 = master)
         role_o      : out std_logic;  -- the same, to spi_trx
@@ -32,7 +32,7 @@ entity spi_ctrl is
         cs_n_oe     : out std_logic;
         mosi_oe     : out std_logic;
         miso_oe     : out std_logic;
-        flush_o     : out std_logic;  -- role change: drop the words pending in both buffers
+        flush_o     : out std_logic;  -- role change: drop the word pending in the RX buffer
         start_o     : out std_logic;
         stop_o      : out std_logic;
         sample_o    : out std_logic;
@@ -95,7 +95,6 @@ begin
                         end if;
                     when S_FLUSH =>
                         -- a CS# fall is never lost: the frame starts here
-                        -- (a TX word being flushed is not sent)
                         if cs_n_fall_i = '1' then
                             state_reg    <= S_FRAME;
                             s_drv_en_reg <= '1';
@@ -177,7 +176,7 @@ begin
     cs_n_oe    <= role_reg;
     mosi_oe    <= role_reg;
     miso_oe    <= s_drv_en_reg;  -- exactly in S_FRAME
-    -- the words taken while role_ack_o still showed the old role are
+    -- a word received while role_ack_o still showed the old role is
     -- dropped in the first cycle of the new one
     flush_o    <= flush_reg;  -- exactly in S_FLUSH and M_FLUSH
     start_o    <= m_start or s_start;

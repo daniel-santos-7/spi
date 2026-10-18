@@ -72,7 +72,6 @@ architecture rtl of spi_port is
     signal spi_port_trx_miso       : std_logic;
     signal spi_port_trx_done       : std_logic;
     signal spi_port_trx_tx_ready   : std_logic;
-    signal spi_port_trx_tx_valid   : std_logic;
     signal spi_port_trx_rx_valid   : std_logic;
     signal spi_port_trx_rx_data    : std_logic_vector(WIDTH-1 downto 0);
     signal spi_port_trx_rx_bits    : std_logic_vector(CNT_BITS-1 downto 0);
@@ -115,7 +114,7 @@ begin
         cs_n_rise_i => spi_port_edge_cs_n_rise,
         sclk_rise_i => spi_port_edge_sclk_rise,
         sclk_fall_i => spi_port_edge_sclk_fall,
-        tx_valid_i  => spi_port_trx_tx_valid,
+        tx_valid_i  => tx_valid_i,
         done_i      => spi_port_trx_done,
         role_ack_o  => spi_port_ctrl_role_ack,
         role_o      => spi_port_ctrl_role,
@@ -142,7 +141,6 @@ begin
         stop_i     => spi_port_ctrl_stop,
         sample_i   => spi_port_ctrl_sample,
         shift_i    => spi_port_ctrl_shift,
-        flush_i    => spi_port_ctrl_flush,
         role_i     => spi_port_ctrl_role,
         miso_i     => miso_i,
         mosi_i     => spi_port_sync_mosi,
@@ -153,7 +151,6 @@ begin
         miso_o     => spi_port_trx_miso,
         done_o     => spi_port_trx_done,
         tx_ready_o => spi_port_trx_tx_ready,
-        tx_valid_o => spi_port_trx_tx_valid,
         rx_valid_o => spi_port_trx_rx_valid,
         rx_data_o  => spi_port_trx_rx_data,
         rx_bits_o  => spi_port_trx_rx_bits
