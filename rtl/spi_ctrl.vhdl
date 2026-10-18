@@ -17,22 +17,22 @@ entity spi_ctrl is
     port (
         clk_i       : in  std_logic;
         rst_i       : in  std_logic;
-        role_req_i  : in  std_logic;  -- requested role (1 = master)
-        cs_n_fall_i : in  std_logic;  -- slave edges (spi_edge)
+        role_req_i  : in  std_logic;
+        cs_n_fall_i : in  std_logic;
         cs_n_rise_i : in  std_logic;
         sclk_rise_i : in  std_logic;
         sclk_fall_i : in  std_logic;
-        tx_valid_i  : in  std_logic;  -- the TX buffer holds a word
+        tx_valid_i  : in  std_logic;
         done_i      : in  std_logic;
-        role_ack_o  : out std_logic;  -- role in effect (1 = master)
-        role_o      : out std_logic;  -- the same, to spi_trx
+        role_ack_o  : out std_logic;
+        role_o      : out std_logic;
         sclk_o      : out std_logic;
         sclk_oe     : out std_logic;
         cs_n_o      : out std_logic;
         cs_n_oe     : out std_logic;
         mosi_oe     : out std_logic;
         miso_oe     : out std_logic;
-        flush_o     : out std_logic;  -- role change: drop the words pending in both buffers
+        flush_o     : out std_logic;
         start_o     : out std_logic;
         stop_o      : out std_logic;
         sample_o    : out std_logic;
@@ -44,7 +44,6 @@ architecture rtl of spi_ctrl is
 
     type state_t is (S_IDLE, S_FLUSH, S_FRAME, M_IDLE, M_FLUSH, M_SCK_LO, M_SCK_HI, M_END);
 
-    -- the SCK divider counts 0 to SCK_DIV-1
     constant CNT_W : positive := bits_for(SCK_DIV-1);
 
     signal state_reg    : state_t;
@@ -94,7 +93,6 @@ begin
                             flush_reg <= '1';
                         end if;
                     when S_FLUSH =>
-                        -- a CS# fall is never lost: the frame starts here
                         if cs_n_fall_i = '1' then
                             state_reg    <= S_FRAME;
                             s_drv_en_reg <= '1';
@@ -156,13 +154,11 @@ begin
         end if;
     end process cnt_proc;
 
-    -- master strobes, qualified by state
     m_start <= '1' when state_reg = M_IDLE   and tx_valid_i = '1' else '0';
     m_stop  <= '1' when state_reg = M_END    else '0';
     m_rise  <= '1' when state_reg = M_SCK_LO and cnt_end    = '1' else '0';
     m_fall  <= '1' when state_reg = M_SCK_HI and cnt_end    = '1' else '0';
 
-    -- slave strobes, qualified by state the same way
     s_start <= '1' when (state_reg = S_IDLE or state_reg = S_FLUSH) and cs_n_fall_i = '1' else '0';
     s_stop  <= '1' when state_reg = S_FRAME and cs_n_rise_i = '1' else '0';
     s_rise  <= '1' when state_reg = S_FRAME and sclk_rise_i = '1' else '0';
@@ -175,13 +171,11 @@ begin
     cs_n_o     <= cs_n_reg;
     cs_n_oe    <= role_reg;
     mosi_oe    <= role_reg;
-    miso_oe    <= s_drv_en_reg;  -- exactly in S_FRAME
-    -- the words taken while role_ack_o still showed the old role are
-    -- dropped in the first cycle of the new one
-    flush_o    <= flush_reg;  -- exactly in S_FLUSH and M_FLUSH
+    miso_oe    <= s_drv_en_reg;
+    flush_o    <= flush_reg;
     start_o    <= m_start or s_start;
     stop_o     <= m_stop or s_stop;
-    sample_o   <= m_rise or s_rise;  -- mode 0: sample on SCK rise
-    shift_o    <= m_fall or s_fall;  -- and shift on SCK fall
+    sample_o   <= m_rise or s_rise;
+    shift_o    <= m_fall or s_fall;
 
 end architecture rtl;
