@@ -88,13 +88,16 @@ begin
         end if;
     end process tx_proc;
 
+    -- RX shift register and bit count: cleared once the word is out
+    -- (stop_i, where the receive buffer takes it), so every frame starts
+    -- from zero
     rx_proc: process(clk_i)
     begin
         if rising_edge(clk_i) then
             if rst_i = '1' then
                 bit_cnt_reg <= (others => '0');
                 rx_sh_reg   <= (others => '0');
-            elsif start_i = '1' then
+            elsif stop_i = '1' then
                 bit_cnt_reg <= (others => '0');
                 rx_sh_reg   <= (others => '0');
             elsif sample_i = '1' and cnt_full = '0' then
