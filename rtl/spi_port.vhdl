@@ -61,16 +61,22 @@ architecture rtl of spi_port is
     signal spi_port_ctrl_cs_n_oe   : std_logic;
     signal spi_port_ctrl_mosi_oe   : std_logic;
     signal spi_port_ctrl_miso_oe   : std_logic;
-    signal spi_port_ctrl_tx_ready  : std_logic;
+    signal spi_port_ctrl_flush     : std_logic;
     signal spi_port_ctrl_start     : std_logic;
     signal spi_port_ctrl_stop      : std_logic;
     signal spi_port_ctrl_sample    : std_logic;
     signal spi_port_ctrl_shift     : std_logic;
-    signal spi_port_ctrl_load      : std_logic;
+    signal spi_port_ctrl_send      : std_logic;
+
+    signal spi_port_tx_buf_ready   : std_logic;
+    signal spi_port_tx_buf_valid   : std_logic;
+    signal spi_port_tx_buf_data    : std_logic_vector(WIDTH-1 downto 0);
+    signal spi_port_tx_buf_bits    : std_logic_vector(CNT_BITS-1 downto 0);
 
     signal spi_port_trx_mosi       : std_logic;
     signal spi_port_trx_miso       : std_logic;
     signal spi_port_trx_done       : std_logic;
+    signal spi_port_trx_ready      : std_logic;
     signal spi_port_trx_load       : std_logic;
     signal spi_port_trx_data       : std_logic_vector(WIDTH-1 downto 0);
     signal spi_port_trx_bits       : std_logic_vector(CNT_BITS-1 downto 0);
@@ -113,7 +119,7 @@ begin
         cs_n_rise_i => spi_port_edge_cs_n_rise,
         sclk_rise_i => spi_port_edge_sclk_rise,
         sclk_fall_i => spi_port_edge_sclk_fall,
-        tx_valid_i  => tx_valid_i,
+        tx_valid_i  => spi_port_tx_buf_valid,
         done_i      => spi_port_trx_done,
         role_ack_o  => spi_port_ctrl_role_ack,
         role_o      => spi_port_ctrl_role,
@@ -123,12 +129,29 @@ begin
         cs_n_oe     => spi_port_ctrl_cs_n_oe,
         mosi_oe     => spi_port_ctrl_mosi_oe,
         miso_oe     => spi_port_ctrl_miso_oe,
-        tx_ready_o  => spi_port_ctrl_tx_ready,
+        flush_o     => spi_port_ctrl_flush,
         start_o     => spi_port_ctrl_start,
         stop_o      => spi_port_ctrl_stop,
         sample_o    => spi_port_ctrl_sample,
         shift_o     => spi_port_ctrl_shift,
-        load_o      => spi_port_ctrl_load
+        send_o      => spi_port_ctrl_send
+    );
+
+    spi_port_tx_buf: entity work.spi_tx_buf generic map (
+        WIDTH    => WIDTH,
+        CNT_BITS => CNT_BITS
+    ) port map (
+        clk_i   => clk_i,
+        rst_i   => rst_i,
+        flush_i => spi_port_ctrl_flush,
+        valid_i => tx_valid_i,
+        data_i  => tx_data_i,
+        bits_i  => tx_bits_i,
+        ready_i => spi_port_trx_ready,
+        ready_o => spi_port_tx_buf_ready,
+        valid_o => spi_port_tx_buf_valid,
+        data_o  => spi_port_tx_buf_data,
+        bits_o  => spi_port_tx_buf_bits
     );
 
     spi_port_trx: entity work.spi_trx generic map (
@@ -141,15 +164,16 @@ begin
         stop_i   => spi_port_ctrl_stop,
         sample_i => spi_port_ctrl_sample,
         shift_i  => spi_port_ctrl_shift,
-        load_i   => spi_port_ctrl_load,
+        send_i   => spi_port_ctrl_send,
         role_i   => spi_port_ctrl_role,
         miso_i   => miso_i,
         mosi_i   => spi_port_sync_mosi,
-        data_i   => tx_data_i,
-        bits_i   => tx_bits_i,
+        data_i   => spi_port_tx_buf_data,
+        bits_i   => spi_port_tx_buf_bits,
         mosi_o   => spi_port_trx_mosi,
         miso_o   => spi_port_trx_miso,
         done_o   => spi_port_trx_done,
+        ready_o  => spi_port_trx_ready,
         load_o   => spi_port_trx_load,
         data_o   => spi_port_trx_data,
         bits_o   => spi_port_trx_bits
@@ -161,6 +185,7 @@ begin
     ) port map (
         clk_i   => clk_i,
         rst_i   => rst_i,
+        flush_i => spi_port_ctrl_flush,
         load_i  => spi_port_trx_load,
         data_i  => spi_port_trx_data,
         bits_i  => spi_port_trx_bits,
@@ -179,7 +204,7 @@ begin
     mosi_oe    <= spi_port_ctrl_mosi_oe;
     miso_o     <= spi_port_trx_miso;
     miso_oe    <= spi_port_ctrl_miso_oe;
-    tx_ready_o <= spi_port_ctrl_tx_ready;
+    tx_ready_o <= spi_port_tx_buf_ready;
     rx_data_o  <= spi_port_rx_buf_data;
     rx_bits_o  <= spi_port_rx_buf_bits;
     rx_valid_o <= spi_port_rx_buf_valid;

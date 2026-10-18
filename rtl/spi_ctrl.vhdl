@@ -21,7 +21,7 @@ entity spi_ctrl is
         cs_n_rise_i : in  std_logic;
         sclk_rise_i : in  std_logic;
         sclk_fall_i : in  std_logic;
-        tx_valid_i  : in  std_logic;
+        tx_valid_i  : in  std_logic;  -- the TX buffer holds a word
         done_i      : in  std_logic;
         role_ack_o  : out std_logic;  -- role in effect (1 = master)
         role_o      : out std_logic;  -- the same, to spi_trx
@@ -31,12 +31,12 @@ entity spi_ctrl is
         cs_n_oe     : out std_logic;
         mosi_oe     : out std_logic;
         miso_oe     : out std_logic;
-        tx_ready_o  : out std_logic;
+        flush_o     : out std_logic;  -- role change: drop the words pending in both buffers
         start_o     : out std_logic;
         stop_o      : out std_logic;
         sample_o    : out std_logic;
         shift_o     : out std_logic;
-        load_o      : out std_logic
+        send_o      : out std_logic   -- frame start that sends the TX buffer word
     );
 end entity spi_ctrl;
 
@@ -57,23 +57,24 @@ architecture rtl of spi_ctrl is
     -- the SCK divider counts 0 to SCK_DIV-1
     constant CNT_W : positive := bits_for(SCK_DIV-1);
 
-    signal state_reg  : state_t;
-    signal cnt_reg    : unsigned(CNT_W-1 downto 0);
-    signal sclk_reg   : std_logic;
-    signal cs_n_reg   : std_logic;
-    signal ready_reg  : std_logic;
-    signal role_reg   : std_logic;
-    signal cnt_en_reg : std_logic;
-    signal cnt_end    : std_logic;
+    signal state_reg    : state_t;
+    signal cnt_reg      : unsigned(CNT_W-1 downto 0);
+    signal sclk_reg     : std_logic;
+    signal cs_n_reg     : std_logic;
+    signal s_drv_en_reg : std_logic;
+    signal role_reg     : std_logic;
+    signal cnt_en_reg   : std_logic;
+    signal cnt_end      : std_logic;
 
-    signal m_start    : std_logic;
-    signal m_stop     : std_logic;
-    signal m_rise     : std_logic;
-    signal m_fall     : std_logic;
-    signal s_start    : std_logic;
-    signal s_stop     : std_logic;
-    signal s_rise     : std_logic;
-    signal s_fall     : std_logic;
+    signal m_start      : std_logic;
+    signal m_stop       : std_logic;
+    signal m_rise       : std_logic;
+    signal m_fall       : std_logic;
+    signal s_start      : std_logic;
+    signal s_stop       : std_logic;
+    signal s_rise       : std_logic;
+    signal s_fall       : std_logic;
+    signal s_send       : std_logic;
 
 begin
 
@@ -83,33 +84,32 @@ begin
     begin
         if rising_edge(clk_i) then
             if rst_i = '1' then
-                state_reg  <= S_IDLE;
-                sclk_reg   <= '0';
-                cs_n_reg   <= '1';
-                cnt_en_reg <= '0';
-                ready_reg  <= '1';
-                role_reg   <= '0';
+                state_reg    <= S_IDLE;
+                sclk_reg     <= '0';
+                cs_n_reg     <= '1';
+                cnt_en_reg   <= '0';
+                s_drv_en_reg <= '0';
+                role_reg     <= '0';
             else
                 case state_reg is
                     when S_IDLE =>
                         if cs_n_fall_i = '1' then
-                            state_reg <= S_FRAME;
-                            ready_reg <= '0';
+                            state_reg    <= S_FRAME;
+                            s_drv_en_reg <= '1';
                         elsif role_req_i = '1' then
                             state_reg <= M_IDLE;
                             role_reg  <= '1';
                         end if;
                     when S_FRAME =>
                         if cs_n_rise_i = '1' then
-                            state_reg <= S_IDLE;
-                            ready_reg <= '1';
+                            state_reg    <= S_IDLE;
+                            s_drv_en_reg <= '0';
                         end if;
                     when M_IDLE =>
                         if tx_valid_i = '1' then
                             state_reg  <= M_SCK_LO;
                             cs_n_reg   <= '0';
                             cnt_en_reg <= '1';
-                            ready_reg  <= '0';
                         elsif role_req_i = '0' then
                             state_reg <= S_IDLE;
                             role_reg  <= '0';
@@ -132,7 +132,6 @@ begin
                         end if;
                     when M_END =>
                         state_reg <= M_IDLE;
-                        ready_reg <= '1';
                 end case;
             end if;
         end if;
@@ -164,6 +163,9 @@ begin
     s_stop  <= '1' when state_reg = S_FRAME and cs_n_rise_i = '1' else '0';
     s_rise  <= '1' when state_reg = S_FRAME and sclk_rise_i = '1' else '0';
     s_fall  <= '1' when state_reg = S_FRAME and sclk_fall_i = '1' else '0';
+    -- a slave frame sends the reply if the TX buffer holds one; with none
+    -- it sends zeros
+    s_send  <= s_start and tx_valid_i;
 
     role_ack_o <= role_reg;
     role_o     <= role_reg;
@@ -172,12 +174,15 @@ begin
     cs_n_o     <= cs_n_reg;
     cs_n_oe    <= role_reg;
     mosi_oe    <= role_reg;
-    miso_oe    <= not (ready_reg or role_reg);  -- exactly in S_FRAME
-    tx_ready_o <= ready_reg;
+    miso_oe    <= s_drv_en_reg;  -- exactly in S_FRAME
+    -- words still pending when the role changes are dropped (leaving
+    -- M_IDLE, the TX buffer is already empty)
+    flush_o    <= '1' when (state_reg = S_IDLE and cs_n_fall_i = '0' and role_req_i = '1') or
+                           (state_reg = M_IDLE and tx_valid_i  = '0' and role_req_i = '0') else '0';
     start_o    <= m_start or s_start;
     stop_o     <= m_stop or s_stop;
     sample_o   <= m_rise or s_rise;  -- mode 0: sample on SCK rise
     shift_o    <= m_fall or s_fall;  -- and shift on SCK fall
-    load_o     <= tx_valid_i and ready_reg;
+    send_o     <= m_start or s_send;  -- a master frame always sends its word
 
 end architecture rtl;
