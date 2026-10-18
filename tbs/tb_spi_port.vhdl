@@ -28,9 +28,10 @@
 -- the last one is reported, otherwise it waits a random gap. The slave
 -- client writes the reply of a frame once the previous frame in which
 -- the same port was a slave has been reported. Both TX channels of a
--- port share one buffer word: a ready is high while the buffer is free,
--- only one at a time (a round robin grant), so a pending reply blocks
--- master writes and a pending master word blocks replies. In one phase 2
+-- port share one buffer word: both readies are high while the buffer is
+-- free (s_tx_ready low while a master write is offered: the master goes
+-- first), so a pending reply blocks master writes and a pending master
+-- word blocks replies. In one phase 2
 -- frame the next master word is offered to the slave port just as it
 -- sees CS# fall: it must run the slave frame first and then its own.
 --
@@ -240,7 +241,6 @@ architecture sim of tb_spi_port is
     signal s_rx_wcnt  : natural := 0;
     signal s_rx_fcnt  : natural := 0;
     signal s_wdone    : natural;
-    signal n_gnt      : natural := 0;
     signal n_wait     : natural := 0;
 
     -- test plan, per word and per frame
@@ -608,9 +608,8 @@ begin
                 end if;
 
                 if ph = 2 and f = TIE_F and f < NUM_FRAMES then
-                    -- offer the next frame on the other port (master of the
-                    -- last frame, so its TX grant is on the master channel,
-                    -- and with no reply written) so that it is taken on the
+                    -- offer the next frame on the other port (with no reply
+                    -- written, so its TX buffer is free) so that it is taken on the
                     -- edge that port's synchronised CS# goes low: this
                     -- frame's CS# falls one edge after the write and gets
                     -- through the synchroniser 2 edges later. The port then
@@ -696,6 +695,8 @@ begin
                 n := HOST_MAX;
             elsif f = 4 then
                 n := WIDTH / 2;
+            elsif f = HOST_URUN then
+                rnd(4, HOST_MAX, n);  -- room for the writes at bits 1 and 3
             elsif f = HOST_HOLD then
                 rnd(1, WIDTH, n);
             elsif f = HOST_RST or f = HOST_TIE then
@@ -729,8 +730,8 @@ begin
                 rnd_bits(resp);
                 carry_r   := resp;
                 host_resp <= resp;
-                -- hold it until both ports take it (each has its own grant,
-                -- and takes it once: then its buffer is full)
+                -- hold it until both ports take it (each takes it once:
+                -- then its buffer is full)
                 host_wr   <= '1';
                 a_ok      := false;
                 b_ok      := false;
@@ -901,14 +902,14 @@ begin
         end loop;
         host_en <= '0';
 
-        assert n_b2b > 0 and n_mshrt > 0 and n_mclip > 0 and n_swp > 0 and n_gnt > 0 and n_wait > 0
-            report "TB: coverage hole (back-to-back, shorter, clipped, role change, write waiting for the TX grant " &
+        assert n_b2b > 0 and n_mshrt > 0 and n_mclip > 0 and n_swp > 0 and n_wait > 0
+            report "TB: coverage hole (back-to-back, shorter, clipped, role change " &
                    "or master waiting for the bus)" severity error;
         report "TB: PASS - " & integer'image(frame) & " master frames, " & integer'image(word) & " words of " &
                integer'image(WIDTH) & " bits (" & integer'image(n_b2b) & " back-to-back, " &
                integer'image(n_mshrt) & " shorter, " & integer'image(n_mclip) &
-               " with tx_bits 0 or over WIDTH, " & integer'image(n_swp) & " role changes, " &
-               integer'image(n_gnt) & " cycles a write waited for the TX grant), " & integer'image(HOST_FRAMES) & " host frames (" &
+               " with tx_bits 0 or over WIDTH, " & integer'image(n_swp) & " role changes), " &
+               integer'image(HOST_FRAMES) & " host frames (" &
                integer'image(n_empty) & " empty, " & integer'image(n_short) & " shorter, " &
                integer'image(n_exact) & " exact, " & integer'image(n_long) & " longer)"
             severity note;
@@ -1036,6 +1037,7 @@ begin
         variable hi_cnt  : natural := CS_MIN;
         variable frame   : natural := 0;
         variable cs_run  : natural := 0;
+        variable b2b_exp : natural;
         variable a_mr_p  : std_logic := '0';
         variable b_mr_p  : std_logic := '0';
         variable a_sr_p  : std_logic := '0';
@@ -1044,10 +1046,6 @@ begin
         variable b_mt_p  : boolean   := false;
         variable a_st_p  : boolean   := false;
         variable b_st_p  : boolean   := false;
-        variable a_mv_p  : std_logic := '0';
-        variable b_mv_p  : std_logic := '0';
-        variable a_sv_p  : std_logic := '0';
-        variable b_sv_p  : std_logic := '0';
     begin
         wait until rising_edge(clk) and chk_on = '1';
         sclk_p := sclk_in;
@@ -1086,14 +1084,19 @@ begin
                         report "bus: CS# high for " & integer'image(hi_cnt) & " cycles before frame " &
                                integer'image(frame) severity error;
                     if plan_b2b(frame) = '1' then
-                        -- the next word is already in the TX buffer (each
-                        -- frame frees it as it starts), and the frame starts
-                        -- as the port's synchronised CS# is back high: the
-                        -- same for either master; one more if the port's TX
-                        -- grant was on the slave channel (round robin)
-                        assert hi_cnt = B2B_HI or hi_cnt = B2B_HI + 1
+                        -- the next word is already in the TX buffer and the
+                        -- frame starts as the port's synchronised CS# is back
+                        -- high; one more if the new master was the slave,
+                        -- whose reply only leaves the buffer at its stop
+                        if plan_swap(frame) = plan_swap(frame-1) then
+                            b2b_exp := B2B_HI;
+                        else
+                            b2b_exp := B2B_HI + 1;
+                        end if;
+                        assert hi_cnt = b2b_exp
                             report "bus: back-to-back frame " & integer'image(frame) & " waited " &
-                                   integer'image(hi_cnt) & " cycles with CS# high" severity error;
+                                   integer'image(hi_cnt) & " cycles with CS# high, expected " &
+                                   integer'image(b2b_exp) severity error;
                     end if;
                     lo_cnt := 0;
                     phase  := 0;
@@ -1164,9 +1167,9 @@ begin
                     report "bus: master pins not released between frames" severity error;
             end if;
 
-            -- one TX buffer per port: never both readies at once
-            assert (a_m_tx_ready and a_s_tx_ready) = '0' and (b_m_tx_ready and b_s_tx_ready) = '0'
-                report "bus: m_tx_ready and s_tx_ready high together" severity error;
+            -- one TX buffer per port, and the master goes first
+            assert (a_m_tx_valid and a_s_tx_ready) = '0' and (b_m_tx_valid and b_s_tx_ready) = '0'
+                report "bus: s_tx_ready high with a master write offered" severity error;
             -- the TX buffer word is used once its master frame has sent
             -- it: free again on the edge the master's CS# goes back high
             if cs_p = '0' and cs_n_in = '1' then
@@ -1174,20 +1177,16 @@ begin
                        (b_cs_n_oe = '0' or b_m_tx_ready = '1' or b_s_tx_ready = '1')
                     report "bus: TX buffer not free as the master frame ends" severity error;
             end if;
-            -- a ready only drops when a write is taken or the other channel
-            -- of the port has a write waiting, frame or not
+            -- a ready only drops when a write is taken, or s_tx_ready while
+            -- a master write is offered, frame or not
             if rst = '0' then
-                assert (a_mr_p = '0' or a_m_tx_ready = '1' or a_mt_p or a_sv_p = '1') and
-                       (b_mr_p = '0' or b_m_tx_ready = '1' or b_mt_p or b_sv_p = '1')
+                assert (a_mr_p = '0' or a_m_tx_ready = '1' or a_mt_p or a_st_p) and
+                       (b_mr_p = '0' or b_m_tx_ready = '1' or b_mt_p or b_st_p)
                     report "bus: m_tx_ready dropped with no write" severity error;
-                assert (a_sr_p = '0' or a_s_tx_ready = '1' or a_st_p or a_mv_p = '1') and
-                       (b_sr_p = '0' or b_s_tx_ready = '1' or b_st_p or b_mv_p = '1')
+                assert (a_sr_p = '0' or a_s_tx_ready = '1' or a_st_p or a_mt_p or a_m_tx_valid = '1') and
+                       (b_sr_p = '0' or b_s_tx_ready = '1' or b_st_p or b_mt_p or b_m_tx_valid = '1')
                     report "bus: s_tx_ready dropped with no write" severity error;
             end if;
-            a_mv_p := a_m_tx_valid;
-            b_mv_p := b_m_tx_valid;
-            a_sv_p := a_s_tx_valid;
-            b_sv_p := b_s_tx_valid;
             a_mr_p := a_m_tx_ready;
             b_mr_p := b_m_tx_ready;
             a_sr_p := a_s_tx_ready;
@@ -1197,12 +1196,6 @@ begin
             a_st_p := a_s_tx_valid = '1' and a_s_tx_ready = '1';
             b_st_p := b_s_tx_valid = '1' and b_s_tx_ready = '1';
 
-            -- coverage: a write waits while the port's other channel holds
-            -- the TX grant
-            if (a_m_tx_valid = '1' and a_s_tx_ready = '1') or (a_s_tx_valid = '1' and a_m_tx_ready = '1') or
-               (b_m_tx_valid = '1' and b_s_tx_ready = '1') or (b_s_tx_valid = '1' and b_m_tx_ready = '1') then
-                n_gnt <= n_gnt + 1;
-            end if;
             -- coverage: a master word goes into the TX buffer while another
             -- master holds the bus, and must wait for it
             if ((a_m_tx_valid = '1' and a_m_tx_ready = '1' and a_cs_n_oe = '0') or
