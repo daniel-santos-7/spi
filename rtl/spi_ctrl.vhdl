@@ -32,7 +32,6 @@ entity spi_ctrl is
         cs_n_oe     : out std_logic;
         mosi_oe     : out std_logic;
         miso_oe     : out std_logic;
-        flush_o     : out std_logic;
         start_o     : out std_logic;
         stop_o      : out std_logic;
         sample_o    : out std_logic;
@@ -44,7 +43,7 @@ end entity spi_ctrl;
 
 architecture rtl of spi_ctrl is
 
-    type state_t is (S_IDLE, S_FLUSH, S_FRAME, M_IDLE, M_FLUSH, M_SCK_LO, M_SCK_HI, M_END);
+    type state_t is (S_IDLE, S_FRAME, M_IDLE, M_SCK_LO, M_SCK_HI, M_END);
 
     constant CNT_W : positive := bits_for(SCK_DIV-1);
 
@@ -54,7 +53,6 @@ architecture rtl of spi_ctrl is
     signal cs_n_reg     : std_logic;
     signal s_drv_en_reg : std_logic;
     signal role_reg     : std_logic;
-    signal flush_reg    : std_logic;
     signal cnt_en       : std_logic;
     signal cnt_end      : std_logic;
 
@@ -81,25 +79,15 @@ begin
                 cs_n_reg     <= '1';
                 s_drv_en_reg <= '0';
                 role_reg     <= '0';
-                flush_reg    <= '0';
             else
-                flush_reg <= '0';
                 case state_reg is
                     when S_IDLE =>
                         if cs_n_fall_i = '1' then
                             state_reg    <= S_FRAME;
                             s_drv_en_reg <= '1';
                         elsif role_req_i = '1' then
-                            state_reg <= M_FLUSH;
+                            state_reg <= M_IDLE;
                             role_reg  <= '1';
-                            flush_reg <= '1';
-                        end if;
-                    when S_FLUSH =>
-                        if cs_n_fall_i = '1' then
-                            state_reg    <= S_FRAME;
-                            s_drv_en_reg <= '1';
-                        else
-                            state_reg <= S_IDLE;
                         end if;
                     when S_FRAME =>
                         if cs_n_rise_i = '1' then
@@ -111,12 +99,9 @@ begin
                             state_reg <= M_SCK_LO;
                             cs_n_reg  <= '0';
                         elsif role_req_i = '0' then
-                            state_reg <= S_FLUSH;
+                            state_reg <= S_IDLE;
                             role_reg  <= '0';
-                            flush_reg <= '1';
                         end if;
-                    when M_FLUSH =>
-                        state_reg <= M_IDLE;
                     when M_SCK_LO =>
                         if cnt_end = '1' then
                             state_reg <= M_SCK_HI;
@@ -159,7 +144,7 @@ begin
     m_rise  <= '1' when state_reg = M_SCK_LO and cnt_end    = '1' else '0';
     m_fall  <= '1' when state_reg = M_SCK_HI and cnt_end    = '1' else '0';
 
-    s_start <= '1' when (state_reg = S_IDLE or state_reg = S_FLUSH) and cs_n_fall_i = '1' else '0';
+    s_start <= '1' when state_reg = S_IDLE  and cs_n_fall_i = '1' else '0';
     s_stop  <= '1' when state_reg = S_FRAME and cs_n_rise_i = '1' else '0';
     s_rise  <= '1' when state_reg = S_FRAME and sclk_rise_i = '1' else '0';
     s_fall  <= '1' when state_reg = S_FRAME and sclk_fall_i = '1' else '0';
@@ -172,7 +157,6 @@ begin
     cs_n_oe    <= role_reg;
     mosi_oe    <= role_reg;
     miso_oe    <= s_drv_en_reg;
-    flush_o    <= flush_reg;
     start_o    <= m_start or s_start;
     stop_o     <= m_stop or s_stop;
     sample_o   <= m_rise or s_rise;

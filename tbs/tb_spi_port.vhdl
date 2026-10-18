@@ -15,14 +15,14 @@
 -- frame and flip back before it ends: neither port may change role, so
 -- the frame and every check around it must be unaffected. In the next
 -- one B's strap is 1 for the single cycle B sees CS# fall: the slave
--- frame wins and B's reply must not be flushed. In the last phase 0
+-- frame wins and B must take its reply. In the last phase 0
 -- frame A's strap drops to 0 in the cycle its word is offered and
 -- stays there: the word wins, A must send the frame as master and only
 -- then become a slave, without its own CS# rise reaching its slave
 -- logic. Between phases a word offered to B as a slave must not be
 -- taken without a frame, nor start one when B becomes a master once it
 -- is withdrawn; B goes back to slave, and its first word as a master is
--- offered in the cycle after its strap rises (the flush cycle).
+-- offered in the cycle after its strap rises (its first master cycle).
 -- A word is taken only at the start of a frame (tx_ready is the start
 -- strobe): the client holds tx_valid until then. Every frame is one
 -- word of random data from the master, answered by a random reply word
@@ -48,19 +48,17 @@
 -- frame and withdrawn at its end must never be taken.
 -- Both slaves get the same reply, so MISO
 -- contention is not checked in this phase (every reply bit the host
--- samples is). The host reads every word as it is reported, except
--- once: it leaves one word unread, sends the next frame and checks
--- that the buffer still holds the old word, so the new one is dropped.
+-- samples is). There is no receive buffer: every word is reported for
+-- one cycle (rx_valid is the stop strobe) and rx_ready_i, held low, is
+-- not used.
 -- In one host frame both ports are reset halfway through: with CS#
 -- still low after the reset they must stay out of that frame (no word
 -- reported, MISO not driven during the reset nor after it) and take the
--- next one normally. At the end the host leaves an unread word in both
--- slaves; A becomes a master (its word dropped, B's kept), masters an
--- unread frame and becomes a slave again (its word dropped again).
--- Last, a CS# fall lands in the cycle after A's strap drops (the flush
--- cycle; the host forces CS# low against A, still a master, as in a
--- collision): A must take the frame as a slave, with the reply offered
--- from the flush cycle.
+-- next one normally.
+-- Last, a CS# fall lands in the cycle after A's strap drops (its first
+-- slave cycle; the host forces CS# low against A, still a master, as in
+-- a collision): A must take the frame as a slave, with the reply offered
+-- from that cycle.
 --
 -- Checks: every word and bit count the slave reports, the
 -- words the master receives (the first tx_bits bits of the reply),
@@ -95,11 +93,10 @@ architecture sim of tb_spi_port is
     constant CS_MIN     : integer := 2;
     constant MISO_LAT   : integer := 3;
     constant GLITCH_F   : integer := 3;
-    constant B2B_HI     : integer := 4;
+    constant B2B_HI     : integer := 3;
     constant FRAME_CYC  : integer := 2 * WIDTH * SCK_DIV;
     constant HOST_MAX   : integer := 2 * WIDTH + 8;
     constant HOST_URUN  : integer := 5;
-    constant HOST_HOLD  : integer := 6;
     constant HOST_RST   : integer := 10;
     constant MAX_FRAMES : integer := 2 * NUM_FRAMES + 1;
     constant MAX_WORDS  : integer := MAX_FRAMES;
@@ -156,8 +153,6 @@ architecture sim of tb_spi_port is
     signal host_mosi : std_logic := '0';
     signal host_resp : word_t    := (others => '0');
     signal host_wr   : std_logic := '0';
-    signal host_rd   : std_logic := '0';
-    signal rx_free   : std_logic := '1';
     signal cs_ovr    : std_logic := '0';
     signal hw_n      : natural   := 0;
     signal hw_data   : word_arr_t(0 to HOST_WORDS-1);
@@ -224,7 +219,6 @@ architecture sim of tb_spi_port is
     signal m_tx_bits  : bits_t    := (others => '0');
     signal m_rx_data  : word_t;
     signal m_rx_valid : std_logic;
-    signal m_rx_ready : std_logic;
     signal m_rx_wcnt  : natural := 0;
     signal m_rx_fcnt  : natural := 0;
 
@@ -236,7 +230,6 @@ architecture sim of tb_spi_port is
     signal s_rx_data  : word_t;
     signal s_rx_bits  : std_logic_vector(CNT_BITS-1 downto 0);
     signal s_rx_valid : std_logic;
-    signal s_rx_ready : std_logic;
     signal s_rx_wcnt  : natural := 0;
 
     -- test plan, per word and per frame
@@ -355,15 +348,14 @@ begin
     m_tx_ready   <= a_tx_ready   when swap = '0' else b_tx_ready;
     m_rx_data    <= a_rx_data    when swap = '0' else b_rx_data;
     m_rx_valid   <= a_rx_valid   when swap = '0' else b_rx_valid;
-    m_rx_ready   <= a_rx_ready   when swap = '0' else b_rx_ready;
 
-    a_rx_ready   <= host_rd   when host_en = '1' else rx_free;
-    b_rx_ready   <= host_rd   when host_en = '1' else rx_free;
+    -- rx_ready_i is not used: held low
+    a_rx_ready   <= '0';
+    b_rx_ready   <= '0';
     s_tx_ready   <= b_tx_ready   when swap = '0' else a_tx_ready;
     s_rx_data    <= b_rx_data    when swap = '0' else a_rx_data;
     s_rx_bits    <= b_rx_bits    when swap = '0' else a_rx_bits;
     s_rx_valid   <= b_rx_valid   when swap = '0' else a_rx_valid;
-    s_rx_ready   <= b_rx_ready   when swap = '0' else a_rx_ready;
 
     ------------------------------------------------------------------
     -- Stimulus: test plan, master client and software host
@@ -392,8 +384,6 @@ begin
         variable ew      : integer;
         variable eb      : integer;
         variable hw0     : natural;
-        variable sv_rx   : word_t;
-        variable sv_k    : integer := 0;
         variable ar0     : natural;
         variable at0     : natural;
         variable br0     : natural;
@@ -522,9 +512,8 @@ begin
                 m_tx_data  <= mtx;
                 m_tx_bits  <= std_logic_vector(to_unsigned(len, CNT_BITS));
                 if ph = 1 and f = 1 then
-                    -- B's first word as a master comes in the flush cycle,
-                    -- the one after its strap rises: the frame starts once
-                    -- B is in M_IDLE
+                    -- B's first word as a master comes in the cycle after its
+                    -- strap rises, its first cycle in M_IDLE
                     strap_b <= '1';
                     cycles(1);
                 end if;
@@ -604,7 +593,6 @@ begin
         rdy_check <= '0';
         strap_b   <= '0';
         cycles(10);
-        host_rd <= '1';
         host_en <= '1';
         cycles(10);
         report "TB: both ports are slaves, the software host drives the pins" severity note;
@@ -618,9 +606,9 @@ begin
                 n := HOST_MAX;
             elsif f = 4 then
                 n := WIDTH / 2;
-            elsif f = HOST_HOLD then
-                rnd(1, WIDTH, n);
-            elsif f = HOST_RST then
+            elsif f = HOST_RST or f = HOST_FRAMES then
+                -- the last frame leaves both shift registers empty: A drives
+                -- MOSI from it as a master in the last test, against the host
                 n := WIDTH;
             elsif f = HOST_URUN then
                 rnd(3, HOST_MAX, n);
@@ -641,9 +629,6 @@ begin
                 host_wr   <= '1';
             end if;
             pend := false;
-            if f = HOST_HOLD then
-                host_rd <= '0';
-            end if;
             cycles(2);
             hw0 := hw_n;
             ar0 := a_rdy_n;
@@ -726,48 +711,30 @@ begin
                 -- out of this frame and report nothing
                 ew := 0;
             end if;
-            if f = HOST_HOLD then
+            assert hw_n = hw0 + ew
+                report "host: frame " & integer'image(f) & " (" & integer'image(n) & " bits) reported " &
+                       integer'image(hw_n - hw0) & " words, expected " & integer'image(ew) severity error;
+            for w in 0 to ew-1 loop
+                if n = 0 then
+                    eb := 0;
+                elsif n - w*WIDTH < WIDTH then
+                    eb := n - w*WIDTH;
+                else
+                    eb := WIDTH;
+                end if;
                 exp_rx := (others => '0');
-                for i in 0 to n-1 loop
-                    exp_rx(n-1-i) := hbits(HOST_MAX-1-i);
+                for i in 0 to eb-1 loop
+                    exp_rx(eb-1-i) := hbits(HOST_MAX-1-w*WIDTH-i);
                 end loop;
-                assert hw_n = hw0 and a_rx_valid = '1' and to_integer(unsigned(a_rx_bits)) = n and a_rx_data = exp_rx
-                    report "host: frame " & integer'image(f) & " not held in the buffer" severity error;
-                sv_rx := exp_rx;
-                sv_k  := n;
-            elsif f = HOST_HOLD + 1 then
-                assert hw_n = hw0 and a_rx_valid = '1' and to_integer(unsigned(a_rx_bits)) = sv_k and a_rx_data = sv_rx
-                    report "host: frame " & integer'image(f) & " overwrote an unread word" severity error;
-                host_rd <= '1';
-                cycles(3);
-                assert hw_n = hw0 + 1 and hw_data(hw0) = sv_rx and hw_bits(hw0) = sv_k
-                    report "host: frame " & integer'image(f) & " held word not read back alone" severity error;
-            else
-                assert hw_n = hw0 + ew
-                    report "host: frame " & integer'image(f) & " (" & integer'image(n) & " bits) reported " &
-                           integer'image(hw_n - hw0) & " words, expected " & integer'image(ew) severity error;
-                for w in 0 to ew-1 loop
-                    if n = 0 then
-                        eb := 0;
-                    elsif n - w*WIDTH < WIDTH then
-                        eb := n - w*WIDTH;
-                    else
-                        eb := WIDTH;
-                    end if;
-                    exp_rx := (others => '0');
-                    for i in 0 to eb-1 loop
-                        exp_rx(eb-1-i) := hbits(HOST_MAX-1-w*WIDTH-i);
-                    end loop;
-                    if hw0 + w < hw_n then
-                        assert hw_bits(hw0+w) = eb
-                            report "host: frame " & integer'image(f) & " word " & integer'image(w) & " reported " &
-                                   integer'image(hw_bits(hw0+w)) & " bits, expected " & integer'image(eb) severity error;
-                        assert hw_data(hw0+w) = exp_rx
-                            report "host: frame " & integer'image(f) & " word " & integer'image(w) & " is " & hex(hw_data(hw0+w)) &
-                                   ", expected " & hex(exp_rx) severity error;
-                    end if;
-                end loop;
-            end if;
+                if hw0 + w < hw_n then
+                    assert hw_bits(hw0+w) = eb
+                        report "host: frame " & integer'image(f) & " word " & integer'image(w) & " reported " &
+                               integer'image(hw_bits(hw0+w)) & " bits, expected " & integer'image(eb) severity error;
+                    assert hw_data(hw0+w) = exp_rx
+                        report "host: frame " & integer'image(f) & " word " & integer'image(w) & " is " & hex(hw_data(hw0+w)) &
+                               ", expected " & hex(exp_rx) severity error;
+                end if;
+            end loop;
 
             if n = 0 then
                 n_empty := n_empty + 1;
@@ -782,57 +749,14 @@ begin
             cycles(g);
         end loop;
 
-        -- a role change drops the unread receive word: the host leaves a
-        -- word in both slaves, A becomes a master (B keeps its word),
-        -- masters a frame it does not read, and becomes a slave again
-        host_rd <= '0';
-        rnd_bits(hbits);
-        host_cs_n <= '0';
-        cycles(SCK_DIV);
-        for i in 0 to WIDTH-1 loop
-            host_mosi <= hbits(HOST_MAX-1-i);
-            cycles(SCK_DIV);
-            host_sclk <= '1';
-            cycles(SCK_DIV);
-            host_sclk <= '0';
-        end loop;
-        cycles(SCK_DIV);
-        host_cs_n <= '1';
-        host_mosi <= '0';
-        cycles(10);
-        assert a_rx_valid = '1' and b_rx_valid = '1'
-            report "TB: host word not held for the flush test" severity error;
-        rx_free <= '0';
+        -- a CS# fall in A's first slave cycle: the host forces CS# low
+        -- against A, then the strap drops (A still a master, no word
+        -- offered) and the reply is offered from the next cycle (to B too,
+        -- the other slave); A sees the fall in S_IDLE and must take the
+        -- frame and the reply
         host_en <= '0';
         swap    <= '0';
         cycles(2);
-        strap_a <= '1';
-        cycles(10);
-        assert a_role_ack = '1' and a_rx_valid = '0' and b_rx_valid = '1'
-            report "TB: slave to master did not drop only A's unread word" severity error;
-        rnd_bits(mtx);
-        m_tx_data  <= mtx;
-        m_tx_bits  <= std_logic_vector(to_unsigned(WIDTH, CNT_BITS));
-        m_tx_valid <= '1';
-        loop
-            wait until rising_edge(clk);
-            exit when m_tx_ready = '1';
-        end loop;
-        m_tx_valid <= '0';
-        wait until cs_n_in = '0';
-        wait until cs_n_in = '1';
-        cycles(5);
-        assert a_rx_valid = '1'
-            report "TB: master word not held for the flush test" severity error;
-        strap_a <= '0';
-        cycles(10);
-        assert a_role_ack = '0' and a_rx_valid = '0' and b_rx_valid = '1'
-            report "TB: master to slave did not drop only A's unread word" severity error;
-
-        -- a CS# fall in A's flush cycle: the host forces CS# low against A,
-        -- then the strap drops (A still a master, no word offered) and the
-        -- reply is offered from the flush cycle (to B too, the other slave);
-        -- A sees the fall in S_FLUSH and must take the frame and the reply
         strap_a <= '1';
         cycles(10);
         rnd_bits(hbits);
@@ -846,9 +770,10 @@ begin
         cycles(1);
         host_wr   <= '1';
         at0 := a_tx_n;
+        hw0 := hw_n;
         cycles(SCK_DIV);
         assert a_tx_n = at0 + 1
-            report "TB: reply not taken at a start in A's flush cycle" severity error;
+            report "TB: reply not taken at a start in A's first slave cycle" severity error;
         host_wr <= '0';
         cs_ovr  <= '0';  -- A has released CS#: the host drives the pad
         for i in 0 to WIDTH-1 loop
@@ -867,11 +792,10 @@ begin
         for i in 0 to WIDTH-1 loop
             exp_rx(WIDTH-1-i) := hbits(HOST_MAX-1-i);
             assert hrx(HOST_MAX-1-i) = resp(WIDTH-1-i)
-                report "TB: frame from S_FLUSH, reply bit " & integer'image(i) & " wrong" severity error;
+                report "TB: frame after the switch, reply bit " & integer'image(i) & " wrong" severity error;
         end loop;
-        assert a_role_ack = '0' and a_rx_valid = '1' and
-               to_integer(unsigned(a_rx_bits)) = WIDTH and a_rx_data = exp_rx
-            report "TB: CS# fall in the flush cycle lost" severity error;
+        assert a_role_ack = '0' and hw_n = hw0 + 1 and hw_bits(hw0) = WIDTH and hw_data(hw0) = exp_rx
+            report "TB: CS# fall in the first slave cycle lost" severity error;
         host_en   <= '0';
 
         assert n_b2b > 0 and n_held > 0 and n_mshrt > 0 and n_mclip > 0
@@ -907,7 +831,7 @@ begin
         variable i : natural := 0;
     begin
         wait until rising_edge(clk);
-        if chk_on = '1' and host_en = '0' and s_rx_valid = '1' and s_rx_ready = '1' then
+        if chk_on = '1' and host_en = '0' and s_rx_valid = '1' then
             assert i < plan_wcnt
                 report "slave: unexpected word " & hex(s_rx_data) severity error;
             assert to_integer(unsigned(s_rx_bits)) = plan_wbits(i)
@@ -945,7 +869,7 @@ begin
     host_rx_proc: process
     begin
         wait until rising_edge(clk);
-        if host_en = '1' and host_rd = '1' and a_rx_valid = '1' then
+        if host_en = '1' and a_rx_valid = '1' then
             assert b_rx_valid = '1' and b_rx_data = a_rx_data and b_rx_bits = a_rx_bits
                 report "host: the two slaves report different words" severity error;
             hw_data(hw_n) <= a_rx_data;
@@ -963,15 +887,15 @@ begin
         variable hi : natural := 0;
     begin
         wait until rising_edge(clk);
-        if chk_on = '1' and host_en = '0' and m_rx_valid = '1' and m_rx_ready = '1' then
+        if chk_on = '1' and host_en = '0' and m_rx_valid = '1' then
             assert j < plan_wcnt
                 report "master: unexpected word " & hex(m_rx_data) severity error;
             assert m_rx_data = top_bits(plan_sresp(j), plan_wbits(j))
                 report "master: word " & integer'image(j) & " is " & hex(m_rx_data) &
                        ", expected " & hex(top_bits(plan_sresp(j), plan_wbits(j))) severity error;
             if plan_wlast(j) = '1' then
-                assert cs_n_in = '1' and hi = 1
-                    report "master: last word " & integer'image(j) & " not reported in the second cycle with CS# high" severity error;
+                assert cs_n_in = '1' and hi = 0
+                    report "master: last word " & integer'image(j) & " not reported in the first cycle with CS# high" severity error;
                 m_rx_fcnt <= m_rx_fcnt + 1;
             else
                 assert cs_n_in = '0'
