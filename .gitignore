@@ -2,9 +2,8 @@ build/
 *.o
 spi_sync
 spi_edge
-spi_tx_buf
+spi_buf
 spi_trx
-spi_rx_buf
 spi_ctrl
 spi_port
 tb_spi_port

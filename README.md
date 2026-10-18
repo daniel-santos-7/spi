@@ -14,9 +14,8 @@ Dual-role SPI in VHDL-93: one set of pins and one shift core, used either as a m
 rtl/spi_sync.vhdl     two-flip-flop synchronisers for SCK, CS# and MOSI
 rtl/spi_edge.vhdl     slave edge detection on the synchronised CS# and SCK
 rtl/spi_ctrl.vhdl     control: role, FSM, master SCK/CS#, pin enables
-rtl/spi_tx_buf.vhdl   one-word transmit buffer with a ready/valid input
+rtl/spi_buf.vhdl      one-word ready/valid buffer, used for TX and RX
 rtl/spi_trx.vhdl      transceiver: sends the TX buffer word, receive shift register, bit count
-rtl/spi_rx_buf.vhdl   one-word receive buffer with a ready/valid output
 rtl/spi_port.vhdl     structural top
 tbs/tb_spi_port.vhdl  self-checking testbench: two ports on one bus
 ```
@@ -55,7 +54,7 @@ The testbench connects two ports to one modelled bus. It runs random master/slav
 
 **Roles.** As master the port drives SCK, `CS#` and MOSI; as slave it drives MISO only while selected. A role change requested during a frame takes effect when the frame ends; `role_ack_o` = `role_req_i` means it has taken effect. In the master role a pending write wins over a switch back to slave, so stop the master writes before lowering `role_req_i`. There is no arbitration between masters: raise `role_req_i` only when no other master on the bus can start a frame.
 
-**Handshakes.** A write (`tx_valid_i` and `tx_ready_o`) goes into a one-word transmit buffer; `tx_ready_o` is high while the buffer is empty, in a frame or not. The word stays in the buffer, and `tx_ready_o` low, until the end of the frame that sends it. A received word stays on `rx_*` until taken with `rx_ready_i`; one that arrives while the buffer is full is dropped. Keep `tx_valid_i` low during reset, as in AXI.
+**Handshakes.** A write (`tx_valid_i` and `tx_ready_o`) goes into a one-word transmit buffer; `tx_ready_o` is high while the buffer is empty, in a frame or not. The word stays in the buffer until the end of the frame that sends it; a write offered then is taken in that same cycle. A received word stays on `rx_*` until taken with `rx_ready_i`; one that arrives while the buffer is full is dropped. Keep `tx_valid_i` low during reset, as in AXI.
 
 **Role change and pending words.** A role change drops the words still pending: a slave reply not yet sent, and an unread word in the receive buffer, of either role. Read the last word before changing the role. A write taken in the cycle the role changes belongs to the new role and stays.
 
@@ -64,7 +63,7 @@ The testbench connects two ports to one modelled bus. It runs random master/slav
 - A write starts a frame in the next cycle. `CS#` falls with the first MOSI bit, MOSI changes on SCK falls, and MISO is sampled on SCK rises.
 - The frame has *n* = `tx_bits_i` bits (0 or more than `WIDTH` means `WIDTH`), taken from `tx_data_i(WIDTH-1 downto WIDTH-n)`. `CS#` is low for 2·*n*·`SCK_DIV` cycles.
 - The word received is delivered right-aligned in the second cycle with `CS#` high.
-- `CS#` stays high for at least 3 cycles between frames. A slave that needs a longer gap needs the client to wait before writing.
+- `CS#` stays high for at least 2 cycles between frames (with the next word offered during the frame). A slave that needs a longer gap needs the client to wait before writing.
 
 ## Slave
 

@@ -137,7 +137,7 @@ begin
         send_o      => spi_port_ctrl_send
     );
 
-    spi_port_tx_buf: entity work.spi_tx_buf generic map (
+    spi_port_tx_buf: entity work.spi_buf generic map (
         WIDTH    => WIDTH,
         CNT_BITS => CNT_BITS
     ) port map (
@@ -179,17 +179,18 @@ begin
         bits_o   => spi_port_trx_bits
     );
 
-    spi_port_rx_buf: entity work.spi_rx_buf generic map (
+    spi_port_rx_buf: entity work.spi_buf generic map (
         WIDTH    => WIDTH,
         CNT_BITS => CNT_BITS
     ) port map (
         clk_i   => clk_i,
         rst_i   => rst_i,
         flush_i => spi_port_ctrl_flush,
-        load_i  => spi_port_trx_load,
+        valid_i => spi_port_trx_load,
         data_i  => spi_port_trx_data,
         bits_i  => spi_port_trx_bits,
         ready_i => rx_ready_i,
+        ready_o => open,  -- the datapath cannot wait: a word is dropped while full
         valid_o => spi_port_rx_buf_valid,
         data_o  => spi_port_rx_buf_data,
         bits_o  => spi_port_rx_buf_bits

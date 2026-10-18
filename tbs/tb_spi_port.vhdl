@@ -25,10 +25,12 @@
 -- Every frame is one word of random data from the master, answered by
 -- a random reply word from the slave, with a random tx_bits: mostly 1
 -- to WIDTH bits, sometimes 0 or more than WIDTH, which must give WIDTH
--- bits. The master client sometimes starts the next frame as soon as
--- the last one is reported, otherwise it waits a random gap. The slave
--- client writes the reply of a frame once the previous frame has been
--- reported.
+-- bits. The master client sometimes offers the next word while the
+-- frame runs (held: taken as the frame ends, CS# high for CS_MIN
+-- cycles), sometimes as soon as the last one is reported (back-to-back),
+-- otherwise after a random gap. The slave client offers each reply as
+-- soon as it is planned: the TX buffer takes it as the frame before it
+-- ends.
 --
 -- Phase 2 straps both ports as slaves and drives the pins from a
 -- software host, with frames of any length (empty, shorter, equal and
@@ -84,7 +86,7 @@ end entity tb_spi_port;
 architecture sim of tb_spi_port is
 
     constant CLK_PERIOD : time    := 10 ns;
-    constant CS_MIN     : integer := 3;
+    constant CS_MIN     : integer := 2;
     constant MISO_LAT   : integer := 3;
     constant GLITCH_F   : integer := 3;
     constant B2B_HI     : integer := 5;
@@ -223,8 +225,6 @@ architecture sim of tb_spi_port is
     signal s_rx_valid : std_logic;
     signal s_rx_ready : std_logic;
     signal s_rx_wcnt  : natural := 0;
-    signal s_rx_fcnt  : natural := 0;
-    signal s_fdone    : natural;
 
     -- test plan, per word and per frame
     signal plan_wcnt  : natural := 0;
@@ -232,9 +232,9 @@ architecture sim of tb_spi_port is
     signal plan_sresp : word_arr_t(0 to MAX_WORDS-1)        := (others => (others => '0'));
     signal plan_wbits : nat_arr_t(0 to MAX_WORDS-1)         := (others => WIDTH);
     signal plan_wlast : std_logic_vector(0 to MAX_WORDS-1)  := (others => '0');
-    signal plan_wfrm  : nat_arr_t(0 to MAX_WORDS-1)         := (others => 0);
     signal plan_flen  : nat_arr_t(0 to MAX_FRAMES-1)        := (others => WIDTH);
     signal plan_b2b   : std_logic_vector(0 to MAX_FRAMES-1) := (others => '0');
+    signal plan_held  : std_logic_vector(0 to MAX_FRAMES-1) := (others => '0');
 
 begin
 
@@ -366,6 +366,7 @@ begin
         variable frame   : natural := 0;
         variable word    : natural := 0;
         variable b2b     : boolean := false;
+        variable held    : boolean := false;
         variable mtx     : word_t;
         variable resp    : word_t;
         variable pend    : boolean := false;
@@ -380,6 +381,7 @@ begin
         variable sv_rx   : word_t;
         variable sv_k    : integer := 0;
         variable n_b2b   : natural := 0;
+        variable n_held  : natural := 0;
         variable n_mshrt : natural := 0;
         variable n_mclip : natural := 0;
         variable n_empty : natural := 0;
@@ -459,7 +461,8 @@ begin
                 report "TB: roles swapped, A is slave and B is master" severity note;
             end if;
 
-            b2b := false;
+            b2b  := false;
+            held := false;
             for f in 1 to NUM_FRAMES loop
                 rnd_bits(mtx);
                 rnd_bits(resp);
@@ -489,10 +492,12 @@ begin
                 plan_mtx(word)    <= mtx;
                 plan_sresp(word)  <= resp;
                 plan_wbits(word)  <= k;
-                plan_wfrm(word)   <= frame;
                 plan_flen(frame)  <= k;
                 if b2b then
                     plan_b2b(frame) <= '1';
+                end if;
+                if held then
+                    plan_held(frame) <= '1';
                 end if;
                 plan_wcnt <= word + 1;
 
@@ -542,17 +547,24 @@ begin
                 frame := frame + 1;
                 word  := word + 1;
 
-                loop
-                    wait until rising_edge(clk);
-                    exit when m_rx_fcnt = frame;
-                end loop;
-                rnd(0, 3, v);
-                b2b := v = 0 and f < NUM_FRAMES;
-                if b2b then
-                    n_b2b := n_b2b + 1;
+                -- held: the next word is offered while this frame runs and
+                -- taken as it ends; b2b: offered as this one is reported
+                rnd(0, 5, v);
+                held := v = 0 and f < NUM_FRAMES - 1 and not (ph = 0 and (f = GLITCH_F or f = GLITCH_F + 1));
+                b2b  := v = 1 and f < NUM_FRAMES;
+                if held then
+                    n_held := n_held + 1;
                 else
-                    rnd(1, 30, g);
-                    cycles(g);
+                    loop
+                        wait until rising_edge(clk);
+                        exit when m_rx_fcnt = frame;
+                    end loop;
+                    if b2b then
+                        n_b2b := n_b2b + 1;
+                    else
+                        rnd(1, 30, g);
+                        cycles(g);
+                    end if;
                 end if;
             end loop;
 
@@ -788,10 +800,10 @@ begin
         assert a_role_ack = '0' and a_rx_valid = '0' and b_rx_valid = '1'
             report "TB: master to slave did not drop only A's unread word" severity error;
 
-        assert n_b2b > 0 and n_mshrt > 0 and n_mclip > 0
-            report "TB: coverage hole (back-to-back, shorter or clipped master frame)" severity error;
+        assert n_b2b > 0 and n_held > 0 and n_mshrt > 0 and n_mclip > 0
+            report "TB: coverage hole (back-to-back, held, shorter or clipped master frame)" severity error;
         report "TB: PASS - " & integer'image(frame) & " master frames, " & integer'image(word) & " words of " &
-               integer'image(WIDTH) & " bits (" & integer'image(n_b2b) & " back-to-back, " &
+               integer'image(WIDTH) & " bits (" & integer'image(n_b2b) & " back-to-back, " & integer'image(n_held) & " held, " &
                integer'image(n_mshrt) & " shorter, " & integer'image(n_mclip) &
                " with tx_bits 0 or over WIDTH), " & integer'image(HOST_FRAMES) & " host frames (" &
                integer'image(n_empty) & " empty, " & integer'image(n_short) & " shorter, " &
@@ -805,10 +817,10 @@ begin
     -- Slave client: writes each reply once, checks each received word
     ------------------------------------------------------------------
 
-    s_fdone    <= s_rx_fcnt + 1 when s_rx_valid = '1' and plan_wlast(s_rx_wcnt) = '1' else s_rx_fcnt;
     s_tx_data  <= plan_sresp(s_tx_cnt);
-    s_tx_valid <= '1' when host_en = '0' and s_tx_cnt < plan_wcnt and
-                           (s_tx_cnt = 0 or plan_wlast(s_tx_cnt-1) = '0' or s_fdone > plan_wfrm(s_tx_cnt-1)) else '0';
+    -- the TX buffer keeps the order: each reply is offered once planned
+    -- and taken as the frame before it ends
+    s_tx_valid <= '1' when host_en = '0' and s_tx_cnt < plan_wcnt else '0';
 
     slave_tx_proc: process
     begin
@@ -831,9 +843,6 @@ begin
             assert s_rx_data = top_bits(plan_mtx(i), plan_wbits(i))
                 report "slave: word " & integer'image(i) & " is " & hex(s_rx_data) &
                        ", expected " & hex(top_bits(plan_mtx(i), plan_wbits(i))) severity error;
-            if plan_wlast(i) = '1' then
-                s_rx_fcnt <= s_rx_fcnt + 1;
-            end if;
             i := i + 1;
             s_rx_wcnt <= i;
         end if;
@@ -943,6 +952,11 @@ begin
                     assert hi_cnt >= CS_MIN
                         report "bus: CS# high for " & integer'image(hi_cnt) & " cycles before frame " &
                                integer'image(frame) severity error;
+                    if plan_held(frame) = '1' then
+                        assert hi_cnt = CS_MIN
+                            report "bus: held frame " & integer'image(frame) & " waited " &
+                                   integer'image(hi_cnt) & " cycles with CS# high" severity error;
+                    end if;
                     if plan_b2b(frame) = '1' then
                         assert hi_cnt = B2B_HI
                             report "bus: back-to-back frame " & integer'image(frame) & " waited " &
@@ -993,8 +1007,10 @@ begin
                    b_sclk_oe = b_cs_n_oe and b_mosi_oe = b_cs_n_oe
                 report "bus: SCK, CS# and MOSI enables differ" severity error;
             -- in phases 0 and 1 every frame sends a buffered word from both
-            -- sides, which stays in the TX buffer until the frame ends
-            if rdy_check = '1' and cs_n_in = '0' then
+            -- sides, which stays in the TX buffer until the frame ends (the
+            -- slave sees CS# MISO_LAT late: a held frame starts before the
+            -- slave's previous frame ends, which takes the next reply)
+            if rdy_check = '1' and cs_n_in = '0' and cs_run >= MISO_LAT then
                 assert a_tx_ready = '0' and b_tx_ready = '0'
                     report "bus: tx_ready high during a frame" severity error;
             end if;
