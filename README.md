@@ -15,8 +15,8 @@ rtl/spi_pkg.vhdl      package: bits_for and the generic defaults
 rtl/spi_sync.vhdl     two-flip-flop synchronisers for SCK, CS# and MOSI
 rtl/spi_edge.vhdl     slave edge detection on the synchronised CS# and SCK
 rtl/spi_ctrl.vhdl     control: role, FSM, master SCK/CS#, pin enables
-rtl/spi_buf.vhdl      one-word ready/valid buffer, used for TX and RX
-rtl/spi_trx.vhdl      transceiver: sends the TX buffer word, receive shift register, bit count
+rtl/spi_buf.vhdl      one-word ready/valid receive buffer
+rtl/spi_trx.vhdl      transceiver: one-word transmit buffer shifted as it is sent, receive shift register, bit count
 rtl/spi_port.vhdl     structural top
 tbs/tb_spi_port.vhdl  self-checking testbench: two ports on one bus
 ```
@@ -55,13 +55,13 @@ The testbench connects two ports to one modelled bus. It runs random master/slav
 
 **Roles.** As master the port drives SCK, `CS#` and MOSI; as slave it drives MISO only while selected. A role change requested during a frame takes effect when the frame ends; `role_ack_o` = `role_req_i` means it has taken effect. In the master role a pending write wins over a switch back to slave, so stop the master writes before lowering `role_req_i`. There is no arbitration between masters: raise `role_req_i` only when no other master on the bus can start a frame.
 
-**Handshakes.** A write (`tx_valid_i` and `tx_ready_o`) goes into a one-word transmit buffer; `tx_ready_o` is high while the buffer is empty, in a frame or not. The word stays in the buffer until the end of the frame that sends it; a write offered then is taken in that same cycle. A received word stays on `rx_*` until taken with `rx_ready_i`; one that arrives while the buffer is full is dropped. Keep `tx_valid_i` low during reset, as in AXI.
+**Handshakes.** A write (`tx_valid_i` and `tx_ready_o`) goes into a one-word transmit buffer; `tx_ready_o` is high while the buffer is empty between frames. The word stays in the buffer until the end of the frame that sends it; a write offered then is taken in that same cycle. A write offered during a frame that sends no word waits for the frame to end. A received word stays on `rx_*` until taken with `rx_ready_i`; one that arrives while the buffer is full is dropped. Keep `tx_valid_i` low during reset, as in AXI.
 
 **Role change and pending words.** A role change drops the words still pending: a slave reply not yet sent, and an unread word in the receive buffer, of either role. Read the last word before changing the role. A word belongs to the role `role_ack_o` shows in the cycle it is taken: the drop happens in the first cycle with the new `role_ack_o`, so a write taken in the cycle the change of `role_req_i` is seen (`role_ack_o` still old) is dropped too, and one taken from that first cycle on stays. A slave frame that starts in that first cycle (a `CS#` fall right after the switch, which only a colliding master can cause) is still taken, and sends zeros.
 
 ## Master
 
-- A write starts a frame in the next cycle. `CS#` falls with the first MOSI bit, MOSI changes on SCK falls, and MISO is sampled on SCK rises.
+- A write starts a frame in the next cycle. MOSI shows the first bit from the write and `CS#` falls one cycle later; MOSI changes on SCK falls, and MISO is sampled on SCK rises.
 - The frame has *n* = `tx_bits_i` bits (0 or more than `WIDTH` means `WIDTH`), taken from `tx_data_i(WIDTH-1 downto WIDTH-n)`. `CS#` is low for 2·*n*·`SCK_DIV` cycles.
 - The word received is delivered right-aligned in the second cycle with `CS#` high.
 - `CS#` stays high for at least 2 cycles between frames (with the next word offered during the frame). A slave that needs a longer gap needs the client to wait before writing.
@@ -69,7 +69,7 @@ The testbench connects two ports to one modelled bus. It runs random master/slav
 ## Slave
 
 - Each frame is delivered as one word, right-aligned, with its bit count (0 to `WIDTH`), one cycle after the port sees `CS#` rise. A frame longer than `WIDTH` keeps its first `WIDTH` bits.
-- The reply can be written whenever the transmit buffer is empty and goes out in the next frame that starts after it. After `WIDTH` bits, or when the buffer was empty as the frame started (underrun), the slave sends zeros; a reply written during such a frame waits for the next one. A reply is used by a frame with at least one bit: before an empty frame it stays for the next one.
+- The reply can be written between frames, while the transmit buffer is empty, and goes out in the next frame. After `WIDTH` bits, or when the buffer was empty as the frame started (underrun), the slave sends zeros; a reply offered during such a frame is taken when it ends. A reply is used by a frame with at least one bit: before an empty frame it stays for the next one.
 - If reset ends in the middle of a host frame, the port stays out of that frame and takes the next one.
 
 Host timing, in system clock cycles (the port sees the pins 2 to 3 cycles late):

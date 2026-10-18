@@ -1,7 +1,7 @@
 ----------------------------------------------------------------------
 -- Leaf project
 -- developed by: Daniel Santos
--- module: SPI transceiver (shift registers, bit count, frame length)
+-- module: SPI transceiver (TX word buffer and shift register, RX shift register, bit count)
 -- 2026
 ----------------------------------------------------------------------
 
@@ -16,40 +16,48 @@ entity spi_trx is
         CNT_BITS : positive := DEF_CNT_BITS
     );
     port (
-        clk_i    : in  std_logic;
-        rst_i    : in  std_logic;
+        clk_i      : in  std_logic;
+        rst_i      : in  std_logic;
 
-        start_i  : in  std_logic;
-        stop_i   : in  std_logic;
-        sample_i : in  std_logic;
-        shift_i  : in  std_logic;
-        send_i   : in  std_logic;  -- frame start that sends data_i (the TX buffer word)
+        start_i    : in  std_logic;
+        stop_i     : in  std_logic;
+        sample_i   : in  std_logic;
+        shift_i    : in  std_logic;
+        flush_i    : in  std_logic;  -- role change: drop the TX word held
 
-        role_i   : in  std_logic;  -- 1 = master: sample miso_i
-        miso_i   : in  std_logic;  -- not synchronised: master only, timed by our own SCK
-        mosi_i   : in  std_logic;  -- synchronised to clk_i (spi_sync does it)
+        role_i     : in  std_logic;  -- 1 = master: sample miso_i
+        miso_i     : in  std_logic;  -- not synchronised: master only, timed by our own SCK
+        mosi_i     : in  std_logic;  -- synchronised to clk_i (spi_sync does it)
 
-        data_i   : in  std_logic_vector(WIDTH-1 downto 0);     -- TX buffer word, held while it is sent
-        bits_i   : in  std_logic_vector(CNT_BITS-1 downto 0);
+        tx_valid_i : in  std_logic;  -- client write
+        tx_data_i  : in  std_logic_vector(WIDTH-1 downto 0);
+        tx_bits_i  : in  std_logic_vector(CNT_BITS-1 downto 0);
 
-        mosi_o   : out std_logic;
-        miso_o   : out std_logic;
-        done_o   : out std_logic;
-        ready_o  : out std_logic;  -- the frame that sent the TX buffer word ends, to the TX buffer
-        valid_o  : out std_logic;  -- word received (stop_i), to the receive buffer
-        data_o   : out std_logic_vector(WIDTH-1 downto 0);
-        bits_o   : out std_logic_vector(CNT_BITS-1 downto 0)
+        mosi_o     : out std_logic;
+        miso_o     : out std_logic;
+        done_o     : out std_logic;
+        tx_ready_o : out std_logic;
+        tx_valid_o : out std_logic;  -- a TX word is held, to spi_ctrl
+        rx_valid_o : out std_logic;  -- word received (stop_i), to the receive buffer
+        rx_data_o  : out std_logic_vector(WIDTH-1 downto 0);
+        rx_bits_o  : out std_logic_vector(CNT_BITS-1 downto 0)
     );
 end entity spi_trx;
 
 architecture rtl of spi_trx is
 
-    signal bit_cnt_reg : unsigned(CNT_BITS-1 downto 0);
-    signal rx_sh_reg   : std_logic_vector(WIDTH-1 downto 0);
-    signal dout_reg    : std_logic;
-    signal tx_en_reg   : std_logic;
-    signal din         : std_logic;
-    signal done        : std_logic;
+    signal bit_cnt_reg  : unsigned(CNT_BITS-1 downto 0);
+    signal rx_sh_reg    : std_logic_vector(WIDTH-1 downto 0);
+    signal tx_valid_reg : std_logic;
+    signal tx_sh_reg    : std_logic_vector(WIDTH-1 downto 0);
+    signal tx_bits_reg  : std_logic_vector(CNT_BITS-1 downto 0);
+    signal busy_reg     : std_logic;
+    signal din          : std_logic;
+    signal done         : std_logic;
+    signal tx_used      : std_logic;
+    signal tx_ready     : std_logic;
+    signal tx_load      : std_logic;
+    signal tx_clr       : std_logic;
 
 begin
 
@@ -57,29 +65,52 @@ begin
     assert 2**CNT_BITS > WIDTH report "SPI transceiver: CNT_BITS too small to count WIDTH." severity failure;
 
     din  <= miso_i when role_i = '1' else mosi_i;
-    -- bits_i is the master word's, held in the TX buffer during its frame
-    done <= '1' when bit_cnt_reg = unsigned(bits_i) or bit_cnt_reg = WIDTH else '0';
+    -- tx_bits_reg is the master word's, held during its frame
+    done <= '1' when bit_cnt_reg = unsigned(tx_bits_reg) or bit_cnt_reg = WIDTH else '0';
 
-    -- The bit sent comes straight from the TX buffer word, MSB first: the
-    -- first one as the frame starts, the next on each shift (after
-    -- bit_cnt_reg samples), zeros after WIDTH bits. A frame that sends no
-    -- word (a slave frame with no reply) sends zeros, and leaves alone a
-    -- word written meanwhile.
+    -- the TX word is used once a frame has sent it (an empty slave frame
+    -- sent nothing: the reply stays); a new word is taken between frames
+    -- or as the word held is used
+    tx_used  <= '1' when stop_i = '1' and tx_valid_reg = '1' and bit_cnt_reg /= 0 else '0';
+    tx_ready <= (not tx_valid_reg and not busy_reg) or tx_used;
+    tx_load  <= tx_ready and tx_valid_i;
+    tx_clr   <= (tx_used or flush_i) and not tx_load;
+
+    -- One-word TX buffer, ready/valid, which is also the TX shift
+    -- register: the bit sent is its MSB. A word is shifted up as it is
+    -- sent, zeros coming in, and cleared once used or flushed, so with no
+    -- word the buffer is all zeros and a frame without a reply sends
+    -- zeros. A word taken in a flush state belongs to the new role and
+    -- stays. The clear comes first for tx_sh_reg, so it maps onto the
+    -- flip-flops' synchronous reset.
     tx_proc: process(clk_i)
     begin
         if rising_edge(clk_i) then
-            if rst_i = '1' or stop_i = '1' then
-                dout_reg  <= '0';
-                tx_en_reg <= '0';
-            elsif send_i = '1' then
-                dout_reg  <= data_i(WIDTH-1);
-                tx_en_reg <= '1';
-            elsif shift_i = '1' then
-                if tx_en_reg = '1' and bit_cnt_reg /= WIDTH then
-                    dout_reg <= data_i(WIDTH-1-to_integer(bit_cnt_reg));
-                else
-                    dout_reg <= '0';
+            if rst_i = '1' then
+                busy_reg     <= '0';
+                tx_valid_reg <= '0';
+                tx_bits_reg  <= (others => '0');
+            else
+                if start_i = '1' then
+                    busy_reg <= '1';
+                elsif stop_i = '1' then
+                    busy_reg <= '0';
                 end if;
+
+                if tx_load = '1' then
+                    tx_valid_reg <= '1';
+                    tx_bits_reg  <= tx_bits_i;
+                elsif tx_clr = '1' then
+                    tx_valid_reg <= '0';
+                end if;
+            end if;
+
+            if rst_i = '1' or tx_clr = '1' then
+                tx_sh_reg <= (others => '0');
+            elsif tx_load = '1' then
+                tx_sh_reg <= tx_data_i;
+            elsif shift_i = '1' then
+                tx_sh_reg <= tx_sh_reg(WIDTH-2 downto 0) & '0';
             end if;
         end if;
     end process tx_proc;
@@ -97,14 +128,13 @@ begin
         end if;
     end process rx_proc;
 
-    mosi_o  <= dout_reg;
-    miso_o  <= dout_reg;
-    done_o  <= done;
-    -- the word is used once a frame has sent it (an empty slave frame
-    -- sent nothing: the reply stays)
-    ready_o <= '1' when stop_i = '1' and tx_en_reg = '1' and bit_cnt_reg /= 0 else '0';
-    valid_o <= stop_i;
-    data_o  <= rx_sh_reg;
-    bits_o  <= std_logic_vector(bit_cnt_reg);
+    mosi_o     <= tx_sh_reg(WIDTH-1);
+    miso_o     <= tx_sh_reg(WIDTH-1);
+    done_o     <= done;
+    tx_ready_o <= tx_ready;
+    tx_valid_o <= tx_valid_reg;
+    rx_valid_o <= stop_i;
+    rx_data_o  <= rx_sh_reg;
+    rx_bits_o  <= std_logic_vector(bit_cnt_reg);
 
 end architecture rtl;

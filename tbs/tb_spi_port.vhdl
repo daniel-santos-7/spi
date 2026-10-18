@@ -41,8 +41,9 @@
 -- writes one reply word per frame, so any bit after the WIDTH-th must
 -- be 0. One host frame, after a shorter one, goes out with no reply
 -- written (underrun) and must send zeros, not what the shorter frame
--- left in the shift register, and a reply written during it is taken
--- (the TX buffer is free) but must only go out in the next frame; the
+-- left in the shift register, and a reply offered during it must wait
+-- for the frame to end (tx_ready low through every frame) and go out in
+-- the next one; the
 -- reply written before the empty frame must go out in the next one; a
 -- word offered while the TX buffer holds the reply being sent must not
 -- be taken (tx_ready low until the frame ends).
@@ -670,37 +671,35 @@ begin
                     host_wr   <= '1';
                 end if;
                 if f = HOST_URUN and i = 1 then
-                    -- the buffer is empty in an underrun: the reply is
-                    -- taken, but goes out in the next frame only
+                    -- the buffer is empty in an underrun, but takes no word
+                    -- until the frame ends: the reply goes out in the next
                     rnd_bits(pword);
                     host_resp <= pword;
                     host_wr   <= '1';
-                elsif f = HOST_URUN and i = 2 then
-                    host_wr   <= '0';
                 end if;
                 cycles(SCK_DIV);
                 host_sclk <= '1';
                 hrx(HOST_MAX-1-i) := miso_in;
-                if f = HOST_URUN then
-                    assert (a_tx_ready = '1' and b_tx_ready = '1') = (i = 0)
-                        report "host: frame " & integer'image(f) & " wrong tx_ready during an underrun" severity error;
-                else
-                    assert (a_tx_ready = '0' and b_tx_ready = '0') or (f = HOST_RST and i >= n / 2)
-                        report "host: frame " & integer'image(f) & " tx_ready high while the reply is sent" severity error;
-                end if;
+                assert (a_tx_ready = '0' and b_tx_ready = '0') or (f = HOST_RST and i >= n / 2)
+                    report "host: frame " & integer'image(f) & " tx_ready high during a frame" severity error;
                 assert (a_miso_oe = '0' and b_miso_oe = '0') or not (f = HOST_RST and i >= n / 2)
                     report "host: frame " & integer'image(f) & " MISO driven after a reset in the frame" severity error;
                 cycles(SCK_DIV);
                 host_sclk <= '0';
             end loop;
             cycles(SCK_DIV);
-            host_wr   <= '0';
             host_cs_n <= '1';
             host_mosi <= '0';
-
             if f = HOST_URUN then
-                pend := true;  -- pword, written during the frame
+                -- the reply offered during the underrun is taken once the
+                -- frame is over
+                loop
+                    wait until rising_edge(clk);
+                    exit when a_tx_ready = '1' and b_tx_ready = '1';
+                end loop;
+                pend := true;  -- pword
             end if;
+            host_wr <= '0';
             for i in 0 to n-1 loop
                 if f = HOST_RST then
                     null;  -- the reset clears the reply

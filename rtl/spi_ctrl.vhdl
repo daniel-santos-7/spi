@@ -36,8 +36,7 @@ entity spi_ctrl is
         start_o     : out std_logic;
         stop_o      : out std_logic;
         sample_o    : out std_logic;
-        shift_o     : out std_logic;
-        send_o      : out std_logic   -- frame start that sends the TX buffer word
+        shift_o     : out std_logic
     );
 end entity spi_ctrl;
 
@@ -66,7 +65,6 @@ architecture rtl of spi_ctrl is
     signal s_stop       : std_logic;
     signal s_rise       : std_logic;
     signal s_fall       : std_logic;
-    signal s_send       : std_logic;
 
 begin
 
@@ -96,8 +94,8 @@ begin
                             flush_reg <= '1';
                         end if;
                     when S_FLUSH =>
-                        -- a CS# fall is never lost: the frame starts here,
-                        -- sending zeros (the TX word is being flushed)
+                        -- a CS# fall is never lost: the frame starts here
+                        -- (a TX word being flushed is not sent)
                         if cs_n_fall_i = '1' then
                             state_reg    <= S_FRAME;
                             s_drv_en_reg <= '1';
@@ -170,9 +168,6 @@ begin
     s_stop  <= '1' when state_reg = S_FRAME and cs_n_rise_i = '1' else '0';
     s_rise  <= '1' when state_reg = S_FRAME and sclk_rise_i = '1' else '0';
     s_fall  <= '1' when state_reg = S_FRAME and sclk_fall_i = '1' else '0';
-    -- a slave frame sends the reply if the TX buffer holds one; with none,
-    -- or from S_FLUSH (the word is being dropped), it sends zeros
-    s_send  <= '1' when state_reg = S_IDLE and cs_n_fall_i = '1' and tx_valid_i = '1' else '0';
 
     role_ack_o <= role_reg;
     role_o     <= role_reg;
@@ -189,6 +184,5 @@ begin
     stop_o     <= m_stop or s_stop;
     sample_o   <= m_rise or s_rise;  -- mode 0: sample on SCK rise
     shift_o    <= m_fall or s_fall;  -- and shift on SCK fall
-    send_o     <= m_start or s_send;  -- a master frame always sends its word
 
 end architecture rtl;
