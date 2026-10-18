@@ -64,8 +64,7 @@ architecture rtl of spi_port is
     signal spi_port_ctrl_s_stop     : std_logic;
     signal spi_port_ctrl_sample     : std_logic;
     signal spi_port_ctrl_shift      : std_logic;
-    signal spi_port_ctrl_load       : std_logic;
-    signal spi_port_ctrl_arm        : std_logic;
+    signal spi_port_ctrl_send       : std_logic;
 
     signal spi_port_tx_buf_m_ready  : std_logic;
     signal spi_port_tx_buf_s_ready  : std_logic;
@@ -78,8 +77,7 @@ architecture rtl of spi_port is
     signal spi_port_trx_miso        : std_logic;
     signal spi_port_trx_done        : std_logic;
     signal spi_port_trx_tx_ready    : std_logic;
-    signal spi_port_trx_m_load      : std_logic;
-    signal spi_port_trx_s_load      : std_logic;
+    signal spi_port_trx_load        : std_logic;
     signal spi_port_trx_data        : std_logic_vector(WIDTH-1 downto 0);
     signal spi_port_trx_bits        : std_logic_vector(CNT_BITS-1 downto 0);
 
@@ -123,8 +121,7 @@ begin
         s_stop_o     => spi_port_ctrl_s_stop,
         sample_o     => spi_port_ctrl_sample,
         shift_o      => spi_port_ctrl_shift,
-        load_o       => spi_port_ctrl_load,
-        arm_o        => spi_port_ctrl_arm
+        send_o       => spi_port_ctrl_send
     );
 
     spi_port_tx_buf: entity work.spi_tx_buf generic map (
@@ -158,8 +155,7 @@ begin
         s_stop_i   => spi_port_ctrl_s_stop,
         sample_i   => spi_port_ctrl_sample,
         shift_i    => spi_port_ctrl_shift,
-        load_i     => spi_port_ctrl_load,
-        arm_i      => spi_port_ctrl_arm,
+        send_i     => spi_port_ctrl_send,
         role_i     => spi_port_ctrl_role,
         miso_i     => miso_i,
         mosi_i     => spi_port_sync_mosi,
@@ -169,8 +165,7 @@ begin
         miso_o     => spi_port_trx_miso,
         done_o     => spi_port_trx_done,
         tx_ready_o => spi_port_trx_tx_ready,
-        m_load_o   => spi_port_trx_m_load,
-        s_load_o   => spi_port_trx_s_load,
+        load_o     => spi_port_trx_load,
         data_o     => spi_port_trx_data,
         bits_o     => spi_port_trx_bits
     );
@@ -181,8 +176,8 @@ begin
     ) port map (
         clk_i     => clk_i,
         rst_i     => rst_i,
-        m_load_i  => spi_port_trx_m_load,
-        s_load_i  => spi_port_trx_s_load,
+        load_i    => spi_port_trx_load,
+        role_i    => spi_port_ctrl_role,
         data_i    => spi_port_trx_data,
         bits_i    => spi_port_trx_bits,
         m_ready_i => m_rx_ready_i,

@@ -1,7 +1,7 @@
 ----------------------------------------------------------------------
 -- Leaf project
 -- developed by: Daniel Santos
--- module: SPI receive buffer (one word, a ready/valid pair per role)
+-- module: SPI receive buffer (one word from either role, a ready/valid pair per role)
 -- 2026
 ----------------------------------------------------------------------
 
@@ -16,8 +16,8 @@ entity spi_rx_buf is
     port (
         clk_i     : in  std_logic;
         rst_i     : in  std_logic;
-        m_load_i  : in  std_logic;  -- word of a master frame offered, no ready back
-        s_load_i  : in  std_logic;  -- word of a slave frame offered, no ready back
+        load_i    : in  std_logic;  -- word offered at the end of a frame, no ready back
+        role_i    : in  std_logic;  -- of a master frame (1) or a slave frame (0)
         data_i    : in  std_logic_vector(WIDTH-1 downto 0);
         bits_i    : in  std_logic_vector(CNT_BITS-1 downto 0);
         m_ready_i : in  std_logic;
@@ -53,8 +53,8 @@ begin
                 data_reg    <= (others => '0');
                 bits_reg    <= (others => '0');
             elsif full = '0' or taken = '1' then
-                m_valid_reg <= m_load_i;
-                s_valid_reg <= s_load_i;
+                m_valid_reg <= load_i and role_i;
+                s_valid_reg <= load_i and not role_i;
                 data_reg    <= data_i;
                 bits_reg    <= bits_i;
             end if;

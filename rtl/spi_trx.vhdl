@@ -23,8 +23,7 @@ entity spi_trx is
         s_stop_i   : in  std_logic;  -- slave frame ends
         sample_i   : in  std_logic;
         shift_i    : in  std_logic;
-        load_i     : in  std_logic;  -- master frame start: send data_i, bits_i long
-        arm_i      : in  std_logic;  -- slave frame start with a reply: send data_i
+        send_i     : in  std_logic;  -- frame start that sends data_i (the TX buffer word)
 
         role_i     : in  std_logic;  -- 1 = master: sample miso_i
         miso_i     : in  std_logic;  -- not synchronised: master only, timed by our own SCK
@@ -37,8 +36,7 @@ entity spi_trx is
         miso_o     : out std_logic;
         done_o     : out std_logic;
         tx_ready_o : out std_logic;  -- the frame that sent the TX buffer word ends, to the TX buffer
-        m_load_o   : out std_logic;  -- word received as master (m_stop_i), to the receive buffer
-        s_load_o   : out std_logic;  -- word received as slave (s_stop_i), to the receive buffer
+        load_o     : out std_logic;  -- word received (either stop), to the receive buffer
         data_o     : out std_logic_vector(WIDTH-1 downto 0);
         bits_o     : out std_logic_vector(CNT_BITS-1 downto 0)
     );
@@ -73,7 +71,7 @@ begin
             if rst_i = '1' or m_stop_i = '1' or s_stop_i = '1' then
                 dout_reg  <= '0';
                 tx_en_reg <= '0';
-            elsif load_i = '1' or arm_i = '1' then
+            elsif send_i = '1' then
                 dout_reg  <= data_i(WIDTH-1);
                 tx_en_reg <= '1';
             elsif shift_i = '1' then
@@ -105,8 +103,7 @@ begin
     -- the word is used once a frame has sent it (an empty slave frame
     -- sent nothing: the reply stays)
     tx_ready_o <= '1' when (m_stop_i = '1' or s_stop_i = '1') and tx_en_reg = '1' and bit_cnt_reg /= 0 else '0';
-    m_load_o   <= m_stop_i;
-    s_load_o   <= s_stop_i;
+    load_o     <= m_stop_i or s_stop_i;
     data_o     <= rx_sh_reg;
     bits_o     <= std_logic_vector(bit_cnt_reg);
 

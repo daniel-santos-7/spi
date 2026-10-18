@@ -33,8 +33,7 @@ entity spi_ctrl is
         s_stop_o     : out std_logic;  -- slave frame ends (CS# back high)
         sample_o     : out std_logic;
         shift_o      : out std_logic;
-        load_o       : out std_logic;  -- master frame start: send the TX buffer word
-        arm_o        : out std_logic   -- slave frame start with a reply in the TX buffer: send it
+        send_o       : out std_logic   -- frame start that sends the TX buffer word
     );
 end entity spi_ctrl;
 
@@ -72,7 +71,7 @@ architecture rtl of spi_ctrl is
     signal s_stop       : std_logic;
     signal s_rise       : std_logic;
     signal s_fall       : std_logic;
-    signal s_arm        : std_logic;
+    signal s_send       : std_logic;
 
 begin
 
@@ -183,7 +182,7 @@ begin
     s_fall  <= '1' when state_reg = S_SCK_HI  and cs_n_i = '0' and sclk_i = '0' else '0';
     -- a slave frame sends the reply, if the TX buffer holds one (a master
     -- word stays there for its own frame); with none it sends zeros
-    s_arm   <= s_start and tx_valid_i and not tx_role_i;
+    s_send  <= s_start and tx_valid_i and not tx_role_i;
 
     role_o       <= m_drv_en_reg;
     sclk_o       <= sclk_reg;
@@ -197,7 +196,6 @@ begin
     s_stop_o     <= s_stop;
     sample_o     <= m_rise or s_rise;  -- mode 0: sample on SCK rise
     shift_o      <= m_fall or s_fall;  -- and shift on SCK fall
-    load_o       <= m_start;
-    arm_o        <= s_arm;
+    send_o       <= m_start or s_send;  -- a master frame always sends its word
 
 end architecture rtl;
