@@ -55,7 +55,7 @@ architecture rtl of spi_ctrl is
     signal s_drv_en_reg : std_logic;
     signal role_reg     : std_logic;
     signal flush_reg    : std_logic;
-    signal cnt_en_reg   : std_logic;
+    signal cnt_en       : std_logic;
     signal cnt_end      : std_logic;
 
     signal m_start      : std_logic;
@@ -69,6 +69,7 @@ architecture rtl of spi_ctrl is
 
 begin
 
+    cnt_en  <= '1' when state_reg = M_SCK_LO or state_reg = M_SCK_HI else '0';
     cnt_end <= '1' when cnt_reg = SCK_DIV-1 else '0';
 
     fsm_proc: process(clk_i)
@@ -78,7 +79,6 @@ begin
                 state_reg    <= S_IDLE;
                 sclk_reg     <= '0';
                 cs_n_reg     <= '1';
-                cnt_en_reg   <= '0';
                 s_drv_en_reg <= '0';
                 role_reg     <= '0';
                 flush_reg    <= '0';
@@ -108,9 +108,8 @@ begin
                         end if;
                     when M_IDLE =>
                         if tx_valid_i = '1' then
-                            state_reg  <= M_SCK_LO;
-                            cs_n_reg   <= '0';
-                            cnt_en_reg <= '1';
+                            state_reg <= M_SCK_LO;
+                            cs_n_reg  <= '0';
                         elsif role_req_i = '0' then
                             state_reg <= S_FLUSH;
                             role_reg  <= '0';
@@ -127,9 +126,8 @@ begin
                         if cnt_end = '1' then
                             sclk_reg <= '0';
                             if done_i = '1' then
-                                state_reg  <= M_END;
-                                cs_n_reg   <= '1';
-                                cnt_en_reg <= '0';
+                                state_reg <= M_END;
+                                cs_n_reg  <= '1';
                             else
                                 state_reg <= M_SCK_LO;
                             end if;
@@ -146,7 +144,7 @@ begin
         if rising_edge(clk_i) then
             if rst_i = '1' then
                 cnt_reg <= (others => '0');
-            elsif cnt_en_reg = '1' then
+            elsif cnt_en = '1' then
                 if cnt_end = '1' then
                     cnt_reg <= (others => '0');
                 else
