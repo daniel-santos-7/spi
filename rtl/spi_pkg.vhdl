@@ -11,7 +11,7 @@ package spi_pkg is
     function bits_for(n : natural) return positive;
 
     -- generic defaults
-    constant DEF_SCK_DIV  : positive := 1;
+    constant DEF_DIV_BITS : positive := 8;
     constant DEF_WIDTH    : positive := 32;
     constant DEF_CNT_BITS : positive;  -- holds 0 to DEF_WIDTH
 

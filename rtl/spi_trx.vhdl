@@ -16,34 +16,39 @@ entity spi_trx is
         CNT_BITS : positive := DEF_CNT_BITS
     );
     port (
-        clk_i     : in  std_logic;
-        rst_i     : in  std_logic;
-        start_i   : in  std_logic;
-        stop_i    : in  std_logic;
-        sample_i  : in  std_logic;
-        shift_i   : in  std_logic;
-        role_i    : in  std_logic;
-        miso_i    : in  std_logic;
-        mosi_i    : in  std_logic;
-        tx_data_i : in  std_logic_vector(WIDTH-1 downto 0);
-        tx_bits_i : in  std_logic_vector(CNT_BITS-1 downto 0);
-        mosi_o    : out std_logic;
-        miso_o    : out std_logic;
-        done_o    : out std_logic;
-        rx_data_o : out std_logic_vector(WIDTH-1 downto 0);
-        rx_bits_o : out std_logic_vector(CNT_BITS-1 downto 0)
+        clk_i      : in  std_logic;
+        rst_i      : in  std_logic;
+        start_i    : in  std_logic;
+        stop_i     : in  std_logic;
+        sample_i   : in  std_logic;
+        shift_i    : in  std_logic;
+        role_i     : in  std_logic;
+        miso_i     : in  std_logic;
+        mosi_i     : in  std_logic;
+        tx_valid_i : in  std_logic;
+        tx_data_i  : in  std_logic_vector(WIDTH-1 downto 0);
+        tx_bits_i  : in  std_logic_vector(CNT_BITS-1 downto 0);
+        tx_ready_o : out std_logic;
+        mosi_o     : out std_logic;
+        miso_o     : out std_logic;
+        done_o     : out std_logic;
+        rx_valid_o : out std_logic;
+        rx_data_o  : out std_logic_vector(WIDTH-1 downto 0);
+        rx_bits_o  : out std_logic_vector(CNT_BITS-1 downto 0)
     );
 end entity spi_trx;
 
 architecture rtl of spi_trx is
 
-    signal bit_cnt_reg : unsigned(CNT_BITS-1 downto 0);
-    signal rx_sh_reg   : std_logic_vector(WIDTH-1 downto 0);
-    signal tx_sh_reg   : std_logic_vector(WIDTH-1 downto 0);
-    signal tx_bits_reg : std_logic_vector(CNT_BITS-1 downto 0);
-    signal din         : std_logic;
-    signal cnt_full    : std_logic;
-    signal cnt_len     : std_logic;
+    signal bit_cnt_reg  : unsigned(CNT_BITS-1 downto 0);
+    signal rx_sh_reg    : std_logic_vector(WIDTH-1 downto 0);
+    signal tx_sh_reg    : std_logic_vector(WIDTH-1 downto 0);
+    signal tx_bits_reg  : std_logic_vector(CNT_BITS-1 downto 0);
+    signal tx_ready_reg : std_logic;
+    signal rx_valid_reg : std_logic;
+    signal din          : std_logic;
+    signal cnt_max      : std_logic;
+    signal cnt_full     : std_logic;
 
 begin
 
@@ -51,8 +56,19 @@ begin
     assert 2**CNT_BITS > WIDTH report "SPI transceiver: CNT_BITS too small to count WIDTH." severity failure;
 
     din      <= miso_i when role_i = '1' else mosi_i;
-    cnt_full <= '1' when bit_cnt_reg = WIDTH else '0';
-    cnt_len  <= '1' when bit_cnt_reg = unsigned(tx_bits_reg) else '0';
+    cnt_max  <= '1' when bit_cnt_reg = WIDTH else '0';
+    cnt_full <= '1' when bit_cnt_reg = unsigned(tx_bits_reg) else '0';
+
+    tx_ready_proc: process(clk_i)
+    begin
+        if rising_edge(clk_i) then
+            if rst_i = '1' then
+                tx_ready_reg <= '0';
+            else
+                tx_ready_reg <= start_i and tx_valid_i;
+            end if;
+        end if;
+    end process tx_ready_proc;
 
     tx_proc: process(clk_i)
     begin
@@ -61,13 +77,29 @@ begin
                 tx_sh_reg   <= (others => '0');
                 tx_bits_reg <= (others => '0');
             elsif start_i = '1' then
-                tx_sh_reg   <= tx_data_i;
-                tx_bits_reg <= tx_bits_i;
+                if tx_valid_i = '1' then
+                    tx_sh_reg   <= tx_data_i;
+                    tx_bits_reg <= tx_bits_i;
+                else
+                    tx_sh_reg   <= (others => '0');
+                    tx_bits_reg <= (others => '0');
+                end if;
             elsif shift_i = '1' then
                 tx_sh_reg <= tx_sh_reg(WIDTH-2 downto 0) & '0';
             end if;
         end if;
     end process tx_proc;
+
+    rx_valid_proc: process(clk_i)
+    begin
+        if rising_edge(clk_i) then
+            if rst_i = '1' then
+                rx_valid_reg <= '0';
+            else
+                rx_valid_reg <= stop_i;
+            end if;
+        end if;
+    end process rx_valid_proc;
 
     rx_proc: process(clk_i)
     begin
@@ -75,20 +107,22 @@ begin
             if rst_i = '1' then
                 bit_cnt_reg <= (others => '0');
                 rx_sh_reg   <= (others => '0');
-            elsif stop_i = '1' then
+            elsif start_i = '1' then
                 bit_cnt_reg <= (others => '0');
                 rx_sh_reg   <= (others => '0');
-            elsif sample_i = '1' and cnt_full = '0' then
+            elsif sample_i = '1' and cnt_max = '0' then
                 bit_cnt_reg <= bit_cnt_reg + 1;
                 rx_sh_reg   <= rx_sh_reg(WIDTH-2 downto 0) & din;
             end if;
         end if;
     end process rx_proc;
 
-    mosi_o    <= tx_sh_reg(WIDTH-1);
-    miso_o    <= tx_sh_reg(WIDTH-1);
-    done_o    <= cnt_len or cnt_full;
-    rx_data_o <= rx_sh_reg;
-    rx_bits_o <= std_logic_vector(bit_cnt_reg);
+    tx_ready_o <= tx_ready_reg;
+    mosi_o     <= tx_sh_reg(WIDTH-1);
+    miso_o     <= tx_sh_reg(WIDTH-1);
+    done_o     <= cnt_full or cnt_max;
+    rx_valid_o <= rx_valid_reg;
+    rx_data_o  <= rx_sh_reg;
+    rx_bits_o  <= std_logic_vector(bit_cnt_reg);
 
 end architecture rtl;
