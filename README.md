@@ -63,6 +63,8 @@ The testbench connects two ports to one modelled bus. It runs random master/slav
 
 **Role change.** Change `role_req_i` only while `tx_valid_i` is low. An offered word must be held until `tx_ready_o`, and it is taken by the next frame of the role in effect, so a client with a word pending waits for `tx_ready_o` before changing the role. No word is held between frames, so a role change drops nothing.
 
+**One client per role.** The rule above assumes one client for both roles. A client that serves only the slave role and always keeps a reply offered between frames, which only a host frame can take, cannot follow it: it never has `tx_valid_i` low and no `tx_ready_o` pending when the role has to change. Such a system can keep the rule's purpose, no word going out in a frame of the other role, by having one client per role and showing the port only the `tx_valid_i` of the client of the role in effect, selected by `role_ack_o`. `role_ack_o` changes on the same edge on which the port enters the new role, so in the new role the port only sees the new role's client, and the other client's word is withdrawn without a `tx_ready_o`. The current RTL works this way (the Leaf SoC's `spi_mux` relies on it), but the contract does not state it yet.
+
 ## Master
 
 - A word offered (`tx_valid_i`) to an idle master starts a frame in that cycle; in the next cycle `tx_ready_o` pulses and `CS#` falls with the first bit on MOSI. A word offered during a frame starts the next one once it ends. MOSI changes on SCK falls, and MISO is sampled on SCK rises.
